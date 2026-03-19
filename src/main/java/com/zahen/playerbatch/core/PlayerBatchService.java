@@ -541,30 +541,31 @@ public final class PlayerBatchService {
                 }
 
                 ServerLevel level = (ServerLevel) players.getFirst().level();
-                List<BlockPos> targets = findNearestBlocks(level, source.getPosition(), blockName, players.size());
+                Vec3 searchCenter = averagePosition(players);
+                List<BlockPos> targets = findNearestBlocks(level, searchCenter, blockName, players.size());
                 if (targets.isEmpty()) {
                     return 0;
                 }
 
                 int moved = 0;
-                CommandSourceStack executionSource = source.withSuppressedOutput();
                 for (int index = 0; index < players.size() && index < targets.size(); index++) {
                     EntityPlayerMPFake player = players.get(index);
                     BlockPos target = targets.get(index).relative(direction);
-                    String command = String.format(
-                            Locale.ROOT,
-                            "tp %s %.3f %.3f %.3f",
-                            player.getGameProfile().name(),
+                    boolean success = player.teleportTo(
+                            level,
                             target.getX() + 0.5D,
                             target.getY(),
-                            target.getZ() + 0.5D
+                            target.getZ() + 0.5D,
+                            Set.of(),
+                            player.getYRot(),
+                            player.getXRot(),
+                            false
                     );
-                    boolean success = CommandCompat.performPrefixedCommand(executionSource, command);
                     if (success) {
                         moved++;
-                        debug("Teleported selected fake player via '/{}'", command);
+                        debug("Teleported {} to {} near {}", player.getGameProfile().name(), target, blockName);
                     } else {
-                        PlayerBatch.LOGGER.warn("Teleport command failed: /{}", command);
+                        PlayerBatch.LOGGER.warn("Direct teleport failed for {} to {}", player.getGameProfile().name(), target);
                     }
                 }
                 broadcast(false);
@@ -794,7 +795,7 @@ public final class PlayerBatchService {
         BlockPos centerPos = BlockPos.containing(center);
         int centerY = centerPos.getY();
 
-        for (int radius = 0; radius <= 64 && matches.size() < needed; radius++) {
+        for (int radius = 0; radius <= 256 && matches.size() < needed; radius++) {
             for (int x = centerPos.getX() - radius; x <= centerPos.getX() + radius && matches.size() < needed; x++) {
                 for (int z = centerPos.getZ() - radius; z <= centerPos.getZ() + radius && matches.size() < needed; z++) {
                     if (Math.max(Math.abs(x - centerPos.getX()), Math.abs(z - centerPos.getZ())) != radius) {
@@ -852,6 +853,19 @@ public final class PlayerBatchService {
             used.add(pos);
             matches.add(pos.immutable());
         }
+    }
+
+    private static Vec3 averagePosition(List<EntityPlayerMPFake> players) {
+        double x = 0.0D;
+        double y = 0.0D;
+        double z = 0.0D;
+        for (EntityPlayerMPFake player : players) {
+            x += player.getX();
+            y += player.getY();
+            z += player.getZ();
+        }
+        int count = Math.max(1, players.size());
+        return new Vec3(x / count, y / count, z / count);
     }
 }
 
