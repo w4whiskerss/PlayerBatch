@@ -1,0 +1,78 @@
+plugins {
+    id "fabric-loom" version "${loom_version}"
+    id "maven-publish"
+}
+
+def minecraftVersion = providers.gradleProperty("minecraft_version").get()
+def loaderVersion = providers.gradleProperty("loader_version").get()
+def fabricVersion = providers.gradleProperty("fabric_version").get()
+def carpetVersion = providers.gradleProperty("carpet_version").get()
+def javaVersion = providers.gradleProperty("java_version").orElse("21").get()
+def minecraftDependency = providers.gradleProperty("minecraft_dependency").orElse("~${minecraftVersion}").get()
+def carpetCoordinateParts = carpetVersion.split("-")
+def carpetModVersion = carpetCoordinateParts[carpetCoordinateParts.length - 1].split("\\+")[0]
+def carpetDependency = providers.gradleProperty("carpet_dependency").orElse(">=" + carpetModVersion).get()
+def javaDependency = providers.gradleProperty("java_dependency").orElse(">=" + javaVersion).get()
+
+version = "${project.mod_version}-mc${minecraftVersion}"
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        name = "Masa Maven"
+        url = "https://masa.dy.fi/maven"
+    }
+    maven {
+        name = "Terraformers"
+        url = "https://maven.terraformersmc.com/"
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${minecraftVersion}"
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${loaderVersion}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabricVersion}"
+    modImplementation "carpet:fabric-carpet:${carpetVersion}"
+    modCompileOnly "com.terraformersmc:modmenu:17.0.0-beta.2"
+}
+
+processResources {
+    inputs.property "version", project.version
+    inputs.property "minecraft_dependency", minecraftDependency
+    inputs.property "carpet_dependency", carpetDependency
+    inputs.property "java_dependency", javaDependency
+
+    filesMatching("fabric.mod.json") {
+        expand(
+                "version": project.version,
+                "minecraft_dependency": minecraftDependency,
+                "carpet_dependency": carpetDependency,
+                "java_dependency": javaDependency
+        )
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = "UTF-8"
+    it.options.release = Integer.parseInt(javaVersion)
+}
+
+java {
+    withSourcesJar()
+    sourceCompatibility = JavaVersion.toVersion(javaVersion)
+    targetCompatibility = JavaVersion.toVersion(javaVersion)
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+        }
+    }
+}

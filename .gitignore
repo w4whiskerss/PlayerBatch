@@ -1,0 +1,14 @@
+.gradle/
+.idea/
+.codex/
+.tools/
+build/
+dist/
+run/
+out/
+bin/
+*.iml
+*.log
+*.tmp
+17
+21
