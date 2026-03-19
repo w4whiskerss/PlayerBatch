@@ -1,6 +1,6 @@
-package com.zahen.playersummonbulk.compat;
+package com.zahen.playerbatch.compat;
 
-import com.zahen.playersummonbulk.PlayerSummonBulk;
+import com.zahen.playerbatch.PlayerBatch;
 import net.minecraft.commands.CommandSourceStack;
 
 import java.lang.reflect.Method;
@@ -44,7 +44,7 @@ public final class CommandCompat {
                 }
             }
         } catch (ReflectiveOperationException exception) {
-            PlayerSummonBulk.LOGGER.error("Failed to evaluate command permissions reflectively", exception);
+            PlayerBatch.LOGGER.error("Failed to evaluate command permissions reflectively", exception);
             return false;
         }
     }
@@ -59,8 +59,9 @@ public final class CommandCompat {
             }
             return true;
         } catch (ReflectiveOperationException exception) {
-            PlayerSummonBulk.LOGGER.error("Failed to execute Carpet command /{}", command, exception);
+            PlayerBatch.LOGGER.error("Failed to execute Carpet command /{}", command, exception);
             return false;
         }
     }
 }
+

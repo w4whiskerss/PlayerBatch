@@ -1,6 +1,6 @@
-package com.zahen.playersummonbulk.name;
+package com.zahen.playerbatch.name;
 
-import com.zahen.playersummonbulk.PlayerSummonBulk;
+import com.zahen.playerbatch.PlayerBatch;
 
 import java.io.IOException;
 import java.net.URI;
@@ -27,7 +27,7 @@ public final class NameFetcher {
     );
 
     private static final ExecutorService FETCH_EXECUTOR = Executors.newFixedThreadPool(2, runnable -> {
-        Thread thread = new Thread(runnable, "playersummonbulk-namemc");
+        Thread thread = new Thread(runnable, "playerbatch-namemc");
         thread.setDaemon(true);
         return thread;
     });
@@ -58,7 +58,7 @@ public final class NameFetcher {
                 if (exception instanceof InterruptedException) {
                     Thread.currentThread().interrupt();
                 }
-                PlayerSummonBulk.LOGGER.error("Failed to fetch names from {}", uri, exception);
+                PlayerBatch.LOGGER.error("Failed to fetch names from {}", uri, exception);
             }
         }
         return new ArrayList<>(names);
@@ -68,7 +68,7 @@ public final class NameFetcher {
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .GET()
                 .timeout(Duration.ofSeconds(10))
-                .header("User-Agent", "Mozilla/5.0 (compatible; PlayerSummonBulk/1.0)")
+                .header("User-Agent", "Mozilla/5.0 (compatible; PlayerBatch/1.0)")
                 .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
                 .header("Accept-Language", "en-US,en;q=0.9")
                 .build();
@@ -90,3 +90,4 @@ public final class NameFetcher {
         }
     }
 }
+

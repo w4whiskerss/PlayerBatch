@@ -1,12 +1,12 @@
-package com.zahen.playersummonbulk.client;
+package com.zahen.playerbatch.client;
 
-import com.zahen.playersummonbulk.client.gui.PlayerBatchScreen;
-import com.zahen.playersummonbulk.core.PlayerBatchService;
-import com.zahen.playersummonbulk.network.PlayerBatchNetworking;
+import com.zahen.playerbatch.client.gui.PlayerBatchScreen;
+import com.zahen.playerbatch.core.PlayerBatchService;
+import com.zahen.playerbatch.network.PlayerBatchNetworking;
 import net.fabricmc.api.ClientModInitializer;
 import net.minecraft.client.Minecraft;
 
-public final class PlayerSummonBulkClient implements ClientModInitializer {
+public final class PlayerBatchClient implements ClientModInitializer {
     private static PlayerBatchService.PlayerBatchSnapshot latestSnapshot = new PlayerBatchService.PlayerBatchSnapshot(
             false, 256, 4, false, false, 0, 0, 0, 0, 0, java.util.List.of()
     );
@@ -31,3 +31,4 @@ public final class PlayerSummonBulkClient implements ClientModInitializer {
         return latestSnapshot;
     }
 }
+

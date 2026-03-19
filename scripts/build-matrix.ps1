@@ -34,7 +34,7 @@ foreach ($target in $targets) {
     $mc = $target.minecraft
     $carpetBase = ($target.carpet.Split("-")[-1]).Split("+")[0]
     $javaDep = if ($target.java -eq "17") { ">=17" } else { ">=21" }
-    $jarName = "playersummonbulk-1.0.0-mc$mc.jar"
+    $jarName = "playerbatch-1.0.0-mc$mc.jar"
 
     if (Test-Path "$distDir\$jarName") {
         Write-Host "Skipping $mc (already built)" -ForegroundColor Yellow
@@ -59,3 +59,4 @@ foreach ($target in $targets) {
 }
 
 Write-Host "Done. Jars are in $distDir" -ForegroundColor Green
+

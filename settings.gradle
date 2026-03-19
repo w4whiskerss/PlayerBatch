@@ -9,4 +9,5 @@ pluginManagement {
     }
 }
 
-rootProject.name = "PlayerSummonBulk"
+rootProject.name = "PlayerBatch"
+

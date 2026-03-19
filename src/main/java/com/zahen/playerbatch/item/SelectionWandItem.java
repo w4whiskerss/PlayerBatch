@@ -1,4 +1,4 @@
-package com.zahen.playersummonbulk.item;
+package com.zahen.playerbatch.item;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponents;
@@ -31,3 +31,4 @@ public final class SelectionWandItem {
         return customData.copyTag().getBoolean(TAG_KEY).orElse(false);
     }
 }
+

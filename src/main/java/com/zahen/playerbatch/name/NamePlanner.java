@@ -1,6 +1,6 @@
-package com.zahen.playersummonbulk.name;
+package com.zahen.playerbatch.name;
 
-import com.zahen.playersummonbulk.PlayerSummonBulk;
+import com.zahen.playerbatch.PlayerBatch;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -51,7 +51,7 @@ public final class NamePlanner {
         int fetchTarget = Math.max(count * 3, count + 20);
         return NameFetcher.fetchNamesAsync(fetchTarget).handle((fetchedNames, throwable) -> {
             if (throwable != null) {
-                PlayerSummonBulk.LOGGER.error("Name planning fetch failed", throwable);
+                PlayerBatch.LOGGER.error("Name planning fetch failed", throwable);
             } else if (fetchedNames != null) {
                 for (String fetchedName : fetchedNames) {
                     if (planned.size() >= count) {
@@ -112,3 +112,4 @@ public final class NamePlanner {
         return names;
     }
 }
+

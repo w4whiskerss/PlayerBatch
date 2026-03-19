@@ -1,8 +1,8 @@
-package com.zahen.playersummonbulk.network;
+package com.zahen.playerbatch.network;
 
-import com.zahen.playersummonbulk.PlayerSummonBulk;
-import com.zahen.playersummonbulk.client.PlayerSummonBulkClient;
-import com.zahen.playersummonbulk.core.PlayerBatchService;
+import com.zahen.playerbatch.PlayerBatch;
+import com.zahen.playerbatch.client.PlayerBatchClient;
+import com.zahen.playerbatch.core.PlayerBatchService;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -28,7 +28,7 @@ public final class PlayerBatchNetworking {
 
     public static void registerClient() {
         ClientPlayNetworking.registerGlobalReceiver(PlayerBatchStatePayload.TYPE, (payload, context) ->
-                context.client().execute(() -> PlayerSummonBulkClient.receiveState(payload.snapshot())));
+                context.client().execute(() -> PlayerBatchClient.receiveState(payload.snapshot())));
     }
 
     public static void sendState(ServerPlayer player, PlayerBatchService.PlayerBatchSnapshot snapshot) {
@@ -65,7 +65,7 @@ public final class PlayerBatchNetworking {
 
     public record PlayerBatchActionPayload(ActionKind kind, String text, int number, boolean flag) implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<PlayerBatchActionPayload> TYPE =
-                CustomPacketPayload.createType(PlayerSummonBulk.MOD_ID + "_action");
+                CustomPacketPayload.createType(PlayerBatch.MOD_ID + "_action");
         public static final StreamCodec<FriendlyByteBuf, PlayerBatchActionPayload> STREAM_CODEC =
                 StreamCodec.of((buffer, payload) -> payload.write(buffer), PlayerBatchActionPayload::new);
 
@@ -88,7 +88,7 @@ public final class PlayerBatchNetworking {
 
     public record PlayerBatchStatePayload(PlayerBatchService.PlayerBatchSnapshot snapshot) implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<PlayerBatchStatePayload> TYPE =
-                CustomPacketPayload.createType(PlayerSummonBulk.MOD_ID + "_state");
+                CustomPacketPayload.createType(PlayerBatch.MOD_ID + "_state");
         public static final StreamCodec<FriendlyByteBuf, PlayerBatchStatePayload> STREAM_CODEC =
                 StreamCodec.of((buffer, payload) -> payload.write(buffer), PlayerBatchStatePayload::new);
 
@@ -150,3 +150,4 @@ public final class PlayerBatchNetworking {
         }
     }
 }
+

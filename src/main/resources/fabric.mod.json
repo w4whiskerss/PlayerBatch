@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "id": "playersummonbulk",
+  "id": "playerbatch",
   "version": "${version}",
-  "name": "PlayerSummonBulk",
+  "name": "PlayerBatch",
   "description": "A Carpet addon that bulk-summons fake players by reusing Carpet's /player spawn command.",
   "authors": [
     "OpenAI"
@@ -11,13 +11,13 @@
   "environment": "*",
   "entrypoints": {
     "main": [
-      "com.zahen.playersummonbulk.PlayerSummonBulk"
+      "com.zahen.playerbatch.PlayerBatch"
     ],
     "client": [
-      "com.zahen.playersummonbulk.client.PlayerSummonBulkClient"
+      "com.zahen.playerbatch.client.PlayerBatchClient"
     ],
     "modmenu": [
-      "com.zahen.playersummonbulk.client.ModMenuIntegration"
+      "com.zahen.playerbatch.client.ModMenuIntegration"
     ]
   },
   "depends": {
@@ -36,3 +36,4 @@
     }
   }
 }
+

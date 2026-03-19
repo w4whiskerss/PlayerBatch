@@ -1,8 +1,8 @@
-package com.zahen.playersummonbulk.client.gui;
+package com.zahen.playerbatch.client.gui;
 
-import com.zahen.playersummonbulk.client.PlayerSummonBulkClient;
-import com.zahen.playersummonbulk.core.PlayerBatchService;
-import com.zahen.playersummonbulk.network.PlayerBatchNetworking;
+import com.zahen.playerbatch.client.PlayerBatchClient;
+import com.zahen.playerbatch.core.PlayerBatchService;
+import com.zahen.playerbatch.network.PlayerBatchNetworking;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -28,7 +28,7 @@ public class PlayerBatchScreen extends Screen {
     public PlayerBatchScreen(Screen parent) {
         super(Component.literal("PlayerBatch"));
         this.parent = parent;
-        this.snapshot = PlayerSummonBulkClient.latestSnapshot();
+        this.snapshot = PlayerBatchClient.latestSnapshot();
     }
 
     @Override
@@ -210,3 +210,4 @@ public class PlayerBatchScreen extends Screen {
         }
     }
 }
+

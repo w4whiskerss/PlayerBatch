@@ -1,4 +1,4 @@
-package com.zahen.playersummonbulk.name;
+package com.zahen.playerbatch.name;
 
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -51,3 +51,4 @@ public final class NameValidation {
         return !LONG_CONSONANT_CHAIN.matcher(candidate).matches();
     }
 }
+

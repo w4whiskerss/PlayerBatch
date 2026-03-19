@@ -1,25 +1,25 @@
-package com.zahen.playersummonbulk;
+package com.zahen.playerbatch;
 
 import carpet.CarpetServer;
-import com.zahen.playersummonbulk.core.PlayerBatchService;
-import com.zahen.playersummonbulk.config.PlayerSummonConfig;
-import com.zahen.playersummonbulk.item.SelectionWandItem;
-import com.zahen.playersummonbulk.network.PlayerBatchNetworking;
+import com.zahen.playerbatch.core.PlayerBatchService;
+import com.zahen.playerbatch.config.PlayerBatchConfig;
+import com.zahen.playerbatch.item.SelectionWandItem;
+import com.zahen.playerbatch.network.PlayerBatchNetworking;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.minecraft.world.InteractionResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class PlayerSummonBulk implements ModInitializer {
-    public static final String MOD_ID = "playersummonbulk";
+public class PlayerBatch implements ModInitializer {
+    public static final String MOD_ID = "playerbatch";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     private static final CarpetExtensionImpl EXTENSION = new CarpetExtensionImpl();
 
     @Override
     public void onInitialize() {
-        PlayerSummonConfig.load();
+        PlayerBatchConfig.load();
         PlayerBatchNetworking.registerCommon();
         UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
             if (world.isClientSide()) {
@@ -37,3 +37,4 @@ public class PlayerSummonBulk implements ModInitializer {
         LOGGER.info("Registered {} as a Carpet extension", MOD_ID);
     }
 }
+

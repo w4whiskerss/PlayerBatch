@@ -1,6 +1,6 @@
-package com.zahen.playersummonbulk.config;
+package com.zahen.playerbatch.config;
 
-import com.zahen.playersummonbulk.PlayerSummonBulk;
+import com.zahen.playerbatch.PlayerBatch;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.IOException;
@@ -10,7 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
 
-public final class PlayerSummonConfig {
+public final class PlayerBatchConfig {
     private static final String MAX_SUMMON_COUNT_KEY = "maxSummonCount";
     private static final String MAX_SPAWNS_PER_TICK_KEY = "maxSpawnsPerTick";
     private static final String DEBUG_ENABLED_KEY = "debugEnabled";
@@ -22,11 +22,11 @@ public final class PlayerSummonConfig {
     private static boolean debugEnabled = false;
     private static Path configPath;
 
-    private PlayerSummonConfig() {
+    private PlayerBatchConfig() {
     }
 
     public static void load() {
-        configPath = FabricLoader.getInstance().getConfigDir().resolve("playersummonbulk.properties");
+        configPath = FabricLoader.getInstance().getConfigDir().resolve("playerbatch.properties");
         Properties properties = new Properties();
 
         try {
@@ -36,7 +36,7 @@ public final class PlayerSummonConfig {
                 properties.setProperty(MAX_SPAWNS_PER_TICK_KEY, Integer.toString(DEFAULT_MAX_SPAWNS_PER_TICK));
                 properties.setProperty(DEBUG_ENABLED_KEY, Boolean.toString(false));
                 try (OutputStream outputStream = Files.newOutputStream(configPath)) {
-                    properties.store(outputStream, "PlayerSummonBulk configuration");
+                    properties.store(outputStream, "PlayerBatch configuration");
                 }
             }
 
@@ -46,8 +46,8 @@ public final class PlayerSummonConfig {
             maxSummonCount = sanitizeMax(properties.getProperty(MAX_SUMMON_COUNT_KEY));
             maxSpawnsPerTick = sanitizeSpawnsPerTick(properties.getProperty(MAX_SPAWNS_PER_TICK_KEY));
             debugEnabled = Boolean.parseBoolean(properties.getProperty(DEBUG_ENABLED_KEY, "false"));
-            PlayerSummonBulk.LOGGER.info(
-                    "Loaded PlayerSummonBulk config with maxSummonCount={}, maxSpawnsPerTick={}, debugEnabled={}",
+            PlayerBatch.LOGGER.info(
+                    "Loaded PlayerBatch config with maxSummonCount={}, maxSpawnsPerTick={}, debugEnabled={}",
                     maxSummonCount,
                     maxSpawnsPerTick,
                     debugEnabled
@@ -56,7 +56,7 @@ public final class PlayerSummonConfig {
             maxSummonCount = DEFAULT_MAX_SUMMON_COUNT;
             maxSpawnsPerTick = DEFAULT_MAX_SPAWNS_PER_TICK;
             debugEnabled = false;
-            PlayerSummonBulk.LOGGER.error(
+            PlayerBatch.LOGGER.error(
                     "Failed to load config, using defaults maxSummonCount={}, maxSpawnsPerTick={}, debugEnabled={}",
                     maxSummonCount,
                     maxSpawnsPerTick,
@@ -103,7 +103,7 @@ public final class PlayerSummonConfig {
         try {
             return Math.max(1, Integer.parseInt(rawValue.trim()));
         } catch (NumberFormatException exception) {
-            PlayerSummonBulk.LOGGER.warn(
+            PlayerBatch.LOGGER.warn(
                     "Invalid {} value '{}', using default {}",
                     MAX_SUMMON_COUNT_KEY,
                     rawValue,
@@ -121,7 +121,7 @@ public final class PlayerSummonConfig {
         try {
             return Math.max(1, Integer.parseInt(rawValue.trim()));
         } catch (NumberFormatException exception) {
-            PlayerSummonBulk.LOGGER.warn(
+            PlayerBatch.LOGGER.warn(
                     "Invalid {} value '{}', using default {}",
                     MAX_SPAWNS_PER_TICK_KEY,
                     rawValue,
@@ -144,10 +144,11 @@ public final class PlayerSummonConfig {
         try {
             Files.createDirectories(configPath.getParent());
             try (OutputStream outputStream = Files.newOutputStream(configPath)) {
-                properties.store(outputStream, "PlayerSummonBulk configuration");
+                properties.store(outputStream, "PlayerBatch configuration");
             }
         } catch (IOException exception) {
-            PlayerSummonBulk.LOGGER.error("Failed to save PlayerSummonBulk config", exception);
+            PlayerBatch.LOGGER.error("Failed to save PlayerBatch config", exception);
         }
     }
 }
+

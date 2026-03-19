@@ -1,4 +1,4 @@
-package com.zahen.playersummonbulk.name;
+package com.zahen.playerbatch.name;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -49,3 +49,4 @@ public final class RandomNameGenerator {
         return builder.toString();
     }
 }
+

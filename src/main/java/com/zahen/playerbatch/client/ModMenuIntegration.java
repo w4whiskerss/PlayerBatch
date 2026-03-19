@@ -1,8 +1,8 @@
-package com.zahen.playersummonbulk.client;
+package com.zahen.playerbatch.client;
 
 import com.terraformersmc.modmenu.api.ConfigScreenFactory;
 import com.terraformersmc.modmenu.api.ModMenuApi;
-import com.zahen.playersummonbulk.client.gui.PlayerBatchScreen;
+import com.zahen.playerbatch.client.gui.PlayerBatchScreen;
 
 public final class ModMenuIntegration implements ModMenuApi {
     @Override
@@ -10,3 +10,4 @@ public final class ModMenuIntegration implements ModMenuApi {
         return PlayerBatchScreen::new;
     }
 }
+

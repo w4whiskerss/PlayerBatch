@@ -1,9 +1,9 @@
-package com.zahen.playersummonbulk;
+package com.zahen.playerbatch;
 
 import carpet.CarpetExtension;
 import com.mojang.brigadier.CommandDispatcher;
-import com.zahen.playersummonbulk.command.PlayerBatchCommand;
-import com.zahen.playersummonbulk.core.PlayerBatchService;
+import com.zahen.playerbatch.command.PlayerBatchCommand;
+import com.zahen.playerbatch.core.PlayerBatchService;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.server.MinecraftServer;
@@ -11,7 +11,7 @@ import net.minecraft.server.MinecraftServer;
 public class CarpetExtensionImpl implements CarpetExtension {
     @Override
     public String version() {
-        return PlayerSummonBulk.MOD_ID;
+        return PlayerBatch.MOD_ID;
     }
 
     @Override
@@ -29,3 +29,4 @@ public class CarpetExtensionImpl implements CarpetExtension {
         PlayerBatchService.clear(server);
     }
 }
+

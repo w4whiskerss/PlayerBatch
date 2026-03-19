@@ -1,12 +1,12 @@
-package com.zahen.playersummonbulk.core;
+package com.zahen.playerbatch.core;
 
 import carpet.patches.EntityPlayerMPFake;
-import com.zahen.playersummonbulk.PlayerSummonBulk;
-import com.zahen.playersummonbulk.compat.CommandCompat;
-import com.zahen.playersummonbulk.config.PlayerSummonConfig;
-import com.zahen.playersummonbulk.item.SelectionWandItem;
-import com.zahen.playersummonbulk.name.NamePlanner;
-import com.zahen.playersummonbulk.network.PlayerBatchNetworking;
+import com.zahen.playerbatch.PlayerBatch;
+import com.zahen.playerbatch.compat.CommandCompat;
+import com.zahen.playerbatch.config.PlayerBatchConfig;
+import com.zahen.playerbatch.item.SelectionWandItem;
+import com.zahen.playerbatch.name.NamePlanner;
+import com.zahen.playerbatch.network.PlayerBatchNetworking;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.Direction;
@@ -41,7 +41,7 @@ public final class PlayerBatchService {
             return 0;
         }
 
-        int maxCount = PlayerSummonConfig.getMaxSummonCount();
+        int maxCount = PlayerBatchConfig.getMaxSummonCount();
         if (count < 1 || count > maxCount) {
             source.sendFailure(Component.literal("Count must be between 1 and " + maxCount + "."));
             return 0;
@@ -62,7 +62,7 @@ public final class PlayerBatchService {
 
         NamePlanner.planNamesAsync(count, preferredNames).whenComplete((plannedNames, throwable) -> source.getServer().execute(() -> {
             if (throwable != null) {
-                PlayerSummonBulk.LOGGER.error("Failed to plan names for {} bots", count, throwable);
+                PlayerBatch.LOGGER.error("Failed to plan names for {} bots", count, throwable);
                 source.sendFailure(Component.literal("Failed to fetch names. Check the log for details."));
                 return;
             }
@@ -83,21 +83,21 @@ public final class PlayerBatchService {
     }
 
     public static int setLimit(CommandSourceStack source, int value) {
-        int sanitized = PlayerSummonConfig.setMaxSummonCount(value);
+        int sanitized = PlayerBatchConfig.setMaxSummonCount(value);
         broadcastState(source.getServer());
         source.sendSuccess(() -> Component.literal("Player batch limit set to " + sanitized + "."), true);
         return 1;
     }
 
     public static int setSpawnsPerTick(CommandSourceStack source, int value) {
-        int sanitized = PlayerSummonConfig.setMaxSpawnsPerTick(value);
+        int sanitized = PlayerBatchConfig.setMaxSpawnsPerTick(value);
         broadcastState(source.getServer());
         source.sendSuccess(() -> Component.literal("Max spawns per tick set to " + sanitized + "."), true);
         return 1;
     }
 
     public static int setDebug(CommandSourceStack source, boolean enabled) {
-        PlayerSummonConfig.setDebugEnabled(enabled);
+        PlayerBatchConfig.setDebugEnabled(enabled);
         broadcastState(source.getServer());
         source.sendSuccess(() -> Component.literal("PlayerBatch debug mode " + (enabled ? "enabled" : "disabled") + "."), true);
         return 1;
@@ -252,9 +252,9 @@ public final class PlayerBatchService {
         BatchProgress progress = state.progress();
         return new PlayerBatchSnapshot(
                 openScreen,
-                PlayerSummonConfig.getMaxSummonCount(),
-                PlayerSummonConfig.getMaxSpawnsPerTick(),
-                PlayerSummonConfig.isDebugEnabled(),
+                PlayerBatchConfig.getMaxSummonCount(),
+                PlayerBatchConfig.getMaxSpawnsPerTick(),
+                PlayerBatchConfig.isDebugEnabled(),
                 progress.active(),
                 progress.total(),
                 progress.successCount(),
@@ -334,7 +334,7 @@ public final class PlayerBatchService {
             }
 
             if (activeBatch != null) {
-                activeBatch.tick(PlayerSummonConfig.getMaxSpawnsPerTick());
+                activeBatch.tick(PlayerBatchConfig.getMaxSpawnsPerTick());
                 if (activeBatch.isComplete()) {
                     activeBatch.finish();
                     activeBatch = null;
@@ -403,7 +403,7 @@ public final class PlayerBatchService {
                     succeeded++;
                     debug("Ran selected action '/{}'", command);
                 } else {
-                    PlayerSummonBulk.LOGGER.warn("Selected action failed: /{}", command);
+                    PlayerBatch.LOGGER.warn("Selected action failed: /{}", command);
                 }
             }
             broadcast(false);
@@ -503,8 +503,8 @@ public final class PlayerBatchService {
         }
 
         private void debug(String pattern, Object... args) {
-            if (PlayerSummonConfig.isDebugEnabled()) {
-                PlayerSummonBulk.LOGGER.info("[PlayerBatch] " + pattern, args);
+            if (PlayerBatchConfig.isDebugEnabled()) {
+                PlayerBatch.LOGGER.info("[PlayerBatch] " + pattern, args);
             }
         }
     }
@@ -563,11 +563,11 @@ public final class PlayerBatchService {
                     debug("Spawn accepted for {}", nextName);
                 } else {
                     failCount++;
-                    PlayerSummonBulk.LOGGER.warn("Spawn rejected for fake player {}", nextName);
+                    PlayerBatch.LOGGER.warn("Spawn rejected for fake player {}", nextName);
                 }
             } catch (Exception exception) {
                 failCount++;
-                PlayerSummonBulk.LOGGER.error("Failed to execute Carpet summon command for {}", nextName, exception);
+                PlayerBatch.LOGGER.error("Failed to execute Carpet summon command for {}", nextName, exception);
             }
         }
 
@@ -600,9 +600,10 @@ public final class PlayerBatchService {
         }
 
         private void debug(String pattern, Object... args) {
-            if (PlayerSummonConfig.isDebugEnabled()) {
-                PlayerSummonBulk.LOGGER.info("[PlayerBatch] " + pattern, args);
+            if (PlayerBatchConfig.isDebugEnabled()) {
+                PlayerBatch.LOGGER.info("[PlayerBatch] " + pattern, args);
             }
         }
     }
 }
+
