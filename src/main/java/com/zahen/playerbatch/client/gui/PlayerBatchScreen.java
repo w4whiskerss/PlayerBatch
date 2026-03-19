@@ -83,17 +83,29 @@ public class PlayerBatchScreen extends Screen {
                 PlayerBatchNetworking.ActionKind.CLEAR_SELECTION, "", "", 0, false
         ))).bounds(centerX + 35, startY + 92, 115, 20).build());
 
+        addRenderableWidget(Button.builder(Component.literal("Select All"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
+                PlayerBatchNetworking.ActionKind.SELECT_ALL, "", "", 0, false
+        ))).bounds(centerX - 155, startY + 116, 90, 20).build());
+
+        addRenderableWidget(Button.builder(Component.literal("Range 16"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
+                PlayerBatchNetworking.ActionKind.SELECT_RANGE, "", "", 16, false
+        ))).bounds(centerX - 60, startY + 116, 90, 20).build());
+
+        addRenderableWidget(Button.builder(Component.literal("Closest 10"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
+                PlayerBatchNetworking.ActionKind.SELECT_CLOSEST, "", "", 10, false
+        ))).bounds(centerX + 35, startY + 116, 115, 20).build());
+
         addRenderableWidget(Button.builder(Component.literal("Hit Once"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.RUN_ACTION, "attack once", "", 0, false
-        ))).bounds(centerX - 155, startY + 126, 90, 20).build());
+        ))).bounds(centerX - 155, startY + 146, 90, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("Jump"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.RUN_ACTION, "jump once", "", 0, false
-        ))).bounds(centerX - 60, startY + 126, 90, 20).build());
+        ))).bounds(centerX - 60, startY + 146, 90, 20).build());
 
-        directionBox = addRenderableWidget(new EditBox(font, centerX + 35, startY + 126, 55, 20, Component.literal("Dir")));
+        directionBox = addRenderableWidget(new EditBox(font, centerX + 35, startY + 146, 55, 20, Component.literal("Dir")));
         directionBox.setValue("up");
-        blockBox = addRenderableWidget(new EditBox(font, centerX + 95, startY + 126, 55, 20, Component.literal("Block")));
+        blockBox = addRenderableWidget(new EditBox(font, centerX + 95, startY + 146, 55, 20, Component.literal("Block")));
         blockBox.setValue("stone");
         addRenderableWidget(Button.builder(Component.literal("TP"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.TELEPORT_SELECTION,
@@ -101,7 +113,7 @@ public class PlayerBatchScreen extends Screen {
                 blockBox.getValue(),
                 0,
                 false
-        ))).bounds(centerX + 153, startY + 126, 40, 20).build());
+        ))).bounds(centerX + 153, startY + 146, 40, 20).build());
 
         send(new PlayerBatchNetworking.PlayerBatchActionPayload(PlayerBatchNetworking.ActionKind.REQUEST_STATE, "", "", 0, false));
         applySnapshot(snapshot);
@@ -134,11 +146,11 @@ public class PlayerBatchScreen extends Screen {
         guiGraphics.fillGradient(0, 0, width, height, 0xD0101724, 0xF0152233);
         guiGraphics.drawCenteredString(font, title, width / 2, 12, 0xFFFFFF);
         guiGraphics.drawString(font, "Live config and summon controls", width / 2 - 155, 18, 0xB0B0B0);
-        guiGraphics.drawString(font, progressText(), width / 2 - 155, 160, 0xFFFFFF);
-        guiGraphics.drawString(font, "Selected bots (" + snapshot.selectedNames().size() + "):", width / 2 - 155, 178, 0xFFFFFF);
-        guiGraphics.drawString(font, "Use /playerbatch wand, then right-click or left-click fake players with it.", width / 2 - 155, 170, 0xBDE6FF);
+        guiGraphics.drawString(font, progressText(), width / 2 - 155, 180, 0xFFFFFF);
+        guiGraphics.drawString(font, "Selected bots (" + snapshot.selectedNames().size() + "):", width / 2 - 155, 198, 0xFFFFFF);
+        guiGraphics.drawString(font, "Use /playerbatch wand, then right-click or left-click fake players with it.", width / 2 - 155, 190, 0xBDE6FF);
 
-        int y = 204;
+        int y = 214;
         if (snapshot.selectedNames().isEmpty()) {
             guiGraphics.drawString(font, "None", width / 2 - 155, y, 0x808080);
         } else {

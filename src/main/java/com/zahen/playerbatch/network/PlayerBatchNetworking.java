@@ -47,6 +47,9 @@ public final class PlayerBatchNetworking {
             case TELEPORT_SELECTION -> PlayerBatchService.teleportSelectionFromGui(player, payload.text(), payload.detail());
             case CLEAR_SELECTION -> PlayerBatchService.clearSelectionFromGui(player);
             case GIVE_WAND -> PlayerBatchService.giveWandFromGui(player);
+            case SELECT_ALL -> PlayerBatchService.selectAllFromGui(player);
+            case SELECT_RANGE -> PlayerBatchService.selectRangeFromGui(player, payload.number());
+            case SELECT_CLOSEST -> PlayerBatchService.selectClosestFromGui(player, payload.number());
         }
     }
 
@@ -60,7 +63,10 @@ public final class PlayerBatchNetworking {
         RUN_ACTION,
         TELEPORT_SELECTION,
         CLEAR_SELECTION,
-        GIVE_WAND
+        GIVE_WAND,
+        SELECT_ALL,
+        SELECT_RANGE,
+        SELECT_CLOSEST
     }
 
     public record PlayerBatchActionPayload(ActionKind kind, String text, String detail, int number, boolean flag) implements CustomPacketPayload {

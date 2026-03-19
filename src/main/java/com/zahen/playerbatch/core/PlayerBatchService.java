@@ -34,6 +34,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -150,6 +151,32 @@ public final class PlayerBatchService {
         return selectedNames.size();
     }
 
+    public static int selectAll(CommandSourceStack source) {
+        int selected = state(source.getServer()).selectAll();
+        source.sendSuccess(() -> Component.literal("Selected " + selected + " fake bot" + (selected == 1 ? "" : "s") + "."), true);
+        return selected;
+    }
+
+    public static int selectWithinRange(CommandSourceStack source, double range) {
+        int selected = state(source.getServer()).selectWithinRange(source.getPosition(), range);
+        if (selected <= 0) {
+            source.sendFailure(Component.literal("No fake players found within range " + range + "."));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Selected " + selected + " fake bot" + (selected == 1 ? "" : "s") + " within range " + (int) range + "."), true);
+        return selected;
+    }
+
+    public static int selectClosest(CommandSourceStack source, int count) {
+        int selected = state(source.getServer()).selectClosest(source.getPosition(), count);
+        if (selected <= 0) {
+            source.sendFailure(Component.literal("No fake players found to select."));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Selected the closest " + selected + " fake bot" + (selected == 1 ? "" : "s") + "."), true);
+        return selected;
+    }
+
     public static int runSelectedAction(CommandSourceStack source, String action) {
         int affected = state(source.getServer()).runAction(source, action);
         if (affected <= 0) {
@@ -234,6 +261,18 @@ public final class PlayerBatchService {
 
     public static void giveWandFromGui(ServerPlayer player) {
         giveSelectionWand(player.createCommandSourceStack());
+    }
+
+    public static void selectAllFromGui(ServerPlayer player) {
+        selectAll(player.createCommandSourceStack());
+    }
+
+    public static void selectRangeFromGui(ServerPlayer player, int range) {
+        selectWithinRange(player.createCommandSourceStack(), range);
+    }
+
+    public static void selectClosestFromGui(ServerPlayer player, int count) {
+        selectClosest(player.createCommandSourceStack(), count);
     }
 
     public static boolean toggleSelection(ServerPlayer actor, Entity entity) {
@@ -404,6 +443,50 @@ public final class PlayerBatchService {
             return cleared;
         }
 
+        private int selectAll() {
+            int count = 0;
+            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                if (player instanceof EntityPlayerMPFake fakePlayer) {
+                    if (selectedIds.add(fakePlayer.getUUID())) {
+                        applySelectionGlow(fakePlayer);
+                    } else {
+                        applySelectionGlow(fakePlayer);
+                    }
+                    count++;
+                }
+            }
+            broadcast(false);
+            return count;
+        }
+
+        private int selectWithinRange(Vec3 center, double range) {
+            double rangeSquared = range * range;
+            List<EntityPlayerMPFake> candidates = fakePlayers().stream()
+                    .filter(fakePlayer -> fakePlayer.position().distanceToSqr(center) <= rangeSquared)
+                    .sorted(Comparator.comparingDouble(fakePlayer -> fakePlayer.position().distanceToSqr(center)))
+                    .toList();
+            return selectCandidates(candidates);
+        }
+
+        private int selectClosest(Vec3 center, int count) {
+            List<EntityPlayerMPFake> candidates = fakePlayers().stream()
+                    .sorted(Comparator.comparingDouble(fakePlayer -> fakePlayer.position().distanceToSqr(center)))
+                    .limit(count)
+                    .toList();
+            return selectCandidates(candidates);
+        }
+
+        private int selectCandidates(List<EntityPlayerMPFake> candidates) {
+            int count = 0;
+            for (EntityPlayerMPFake candidate : candidates) {
+                selectedIds.add(candidate.getUUID());
+                applySelectionGlow(candidate);
+                count++;
+            }
+            broadcast(false);
+            return count;
+        }
+
         private boolean toggleSelection(EntityPlayerMPFake player) {
             UUID id = player.getUUID();
             boolean selected;
@@ -451,38 +534,45 @@ public final class PlayerBatchService {
         }
 
         private int teleportSelection(CommandSourceStack source, Direction direction, String blockName) {
-            List<EntityPlayerMPFake> players = selectedPlayers();
-            if (players.isEmpty()) {
-                return 0;
-            }
-
-            ServerLevel level = (ServerLevel) players.getFirst().level();
-            List<BlockPos> targets = findNearestBlocks(level, source.getPosition(), blockName, players.size());
-            if (targets.isEmpty()) {
-                return 0;
-            }
-
-            int moved = 0;
-            CommandSourceStack executionSource = source.withSuppressedOutput();
-            for (int index = 0; index < players.size() && index < targets.size(); index++) {
-                EntityPlayerMPFake player = players.get(index);
-                BlockPos target = targets.get(index).relative(direction);
-                String command = String.format(
-                        Locale.ROOT,
-                        "tp %s %.3f %.3f %.3f",
-                        player.getGameProfile().name(),
-                        target.getX() + 0.5D,
-                        target.getY(),
-                        target.getZ() + 0.5D
-                );
-                boolean success = CommandCompat.performPrefixedCommand(executionSource, command);
-                if (success) {
-                    moved++;
-                    debug("Teleported selected fake player via '/{}'", command);
+            try {
+                List<EntityPlayerMPFake> players = selectedPlayers();
+                if (players.isEmpty()) {
+                    return 0;
                 }
+
+                ServerLevel level = (ServerLevel) players.getFirst().level();
+                List<BlockPos> targets = findNearestBlocks(level, source.getPosition(), blockName, players.size());
+                if (targets.isEmpty()) {
+                    return 0;
+                }
+
+                int moved = 0;
+                CommandSourceStack executionSource = source.withSuppressedOutput();
+                for (int index = 0; index < players.size() && index < targets.size(); index++) {
+                    EntityPlayerMPFake player = players.get(index);
+                    BlockPos target = targets.get(index).relative(direction);
+                    String command = String.format(
+                            Locale.ROOT,
+                            "tp %s %.3f %.3f %.3f",
+                            player.getGameProfile().name(),
+                            target.getX() + 0.5D,
+                            target.getY(),
+                            target.getZ() + 0.5D
+                    );
+                    boolean success = CommandCompat.performPrefixedCommand(executionSource, command);
+                    if (success) {
+                        moved++;
+                        debug("Teleported selected fake player via '/{}'", command);
+                    } else {
+                        PlayerBatch.LOGGER.warn("Teleport command failed: /{}", command);
+                    }
+                }
+                broadcast(false);
+                return moved;
+            } catch (Exception exception) {
+                PlayerBatch.LOGGER.error("PlayerBatch teleportSelection failed for direction={} block={}", direction, blockName, exception);
+                return 0;
             }
-            broadcast(false);
-            return moved;
         }
 
         private List<EntityPlayerMPFake> selectedPlayers() {
@@ -501,6 +591,14 @@ public final class PlayerBatchService {
             }
             players.sort(Comparator.comparing(player -> player.getGameProfile().name(), String::compareToIgnoreCase));
             return players;
+        }
+
+        private List<EntityPlayerMPFake> fakePlayers() {
+            return server.getPlayerList().getPlayers().stream()
+                    .filter(player -> player instanceof EntityPlayerMPFake)
+                    .map(player -> (EntityPlayerMPFake) player)
+                    .filter(Objects::nonNull)
+                    .toList();
         }
 
         private void addSubscriber(UUID subscriber) {

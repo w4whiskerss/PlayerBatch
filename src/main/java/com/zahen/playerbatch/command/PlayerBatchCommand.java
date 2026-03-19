@@ -81,6 +81,21 @@ public final class PlayerBatchCommand {
                         .executes(context -> PlayerBatchService.clearSelection(context.getSource())))
                 .then(Commands.literal("listselection")
                         .executes(context -> PlayerBatchService.listSelection(context.getSource())))
+                .then(Commands.literal("select")
+                        .then(Commands.literal("all")
+                                .executes(context -> PlayerBatchService.selectAll(context.getSource())))
+                        .then(Commands.literal("range")
+                                .then(Commands.argument("distance", IntegerArgumentType.integer(1))
+                                        .executes(context -> PlayerBatchService.selectWithinRange(
+                                                context.getSource(),
+                                                IntegerArgumentType.getInteger(context, "distance")
+                                        ))))
+                        .then(Commands.literal("count")
+                                .then(Commands.argument("number", IntegerArgumentType.integer(1))
+                                        .executes(context -> PlayerBatchService.selectClosest(
+                                                context.getSource(),
+                                                IntegerArgumentType.getInteger(context, "number")
+                                        )))))
                 .then(Commands.literal("limit")
                         .then(Commands.argument("number", IntegerArgumentType.integer(1))
                                 .executes(context -> PlayerBatchService.setLimit(
