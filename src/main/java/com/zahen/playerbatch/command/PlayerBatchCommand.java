@@ -1,6 +1,7 @@
 package com.zahen.playerbatch.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.ArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -8,9 +9,62 @@ import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.zahen.playerbatch.core.PlayerBatchService;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 
+import java.util.List;
+
 public final class PlayerBatchCommand {
+    private static final List<String> DIRECTION_SUGGESTIONS = List.of("up", "below", "north", "south", "east", "west");
+    private static final List<String> ACTION_SUGGESTIONS = List.of(
+            "stop",
+            "use",
+            "use once",
+            "use continuous",
+            "use interval 20",
+            "jump",
+            "jump once",
+            "jump continuous",
+            "jump interval 20",
+            "attack",
+            "attack once",
+            "attack continuous",
+            "attack interval 20",
+            "drop all",
+            "drop mainhand",
+            "drop offhand",
+            "drop 0",
+            "dropStack all",
+            "dropStack mainhand",
+            "dropStack offhand",
+            "dropStack 0",
+            "swapHands",
+            "hotbar 1",
+            "kill",
+            "mount",
+            "mount anything",
+            "dismount",
+            "sneak",
+            "unsneak",
+            "sprint",
+            "unsprint",
+            "look north",
+            "look south",
+            "look east",
+            "look west",
+            "look up",
+            "look down",
+            "turn left",
+            "turn right",
+            "turn back",
+            "move",
+            "move forward",
+            "move backward",
+            "move left",
+            "move right"
+    );
+
     private PlayerBatchCommand() {
     }
 
@@ -47,6 +101,7 @@ public final class PlayerBatchCommand {
                                 .executes(context -> PlayerBatchService.setDebug(context.getSource(), false))))
                 .then(Commands.literal("command")
                         .then(Commands.argument("action", StringArgumentType.greedyString())
+                                .suggests((context, builder) -> SharedSuggestionProvider.suggest(ACTION_SUGGESTIONS, builder))
                                 .executes(context -> PlayerBatchService.runSelectedAction(
                                         context.getSource(),
                                         StringArgumentType.getString(context, "action")
@@ -54,11 +109,16 @@ public final class PlayerBatchCommand {
                 .then(Commands.literal("tp")
                         .then(Commands.literal("type=wand:selected")
                                 .then(Commands.argument("direction", StringArgumentType.word())
-                                        .then(Commands.argument("blocks", IntegerArgumentType.integer(1))
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(DIRECTION_SUGGESTIONS, builder))
+                                        .then(Commands.argument("block", StringArgumentType.word())
+                                                .suggests((context, builder) -> SharedSuggestionProvider.suggest(
+                                                        BuiltInRegistries.BLOCK.keySet().stream().map(Object::toString),
+                                                        builder
+                                                ))
                                                 .executes(context -> PlayerBatchService.teleportSelection(
                                                         context.getSource(),
                                                         StringArgumentType.getString(context, "direction"),
-                                                        IntegerArgumentType.getInteger(context, "blocks")
+                                                        StringArgumentType.getString(context, "block")
                                                 ))))))
                 .then(Commands.literal("summon")
                         .then(summonArguments()))

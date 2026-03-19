@@ -9,19 +9,27 @@ import com.zahen.playerbatch.name.NamePlanner;
 import com.zahen.playerbatch.network.PlayerBatchNetworking;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.BossEvent;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -32,6 +40,7 @@ import java.util.concurrent.ConcurrentMap;
 
 public final class PlayerBatchService {
     private static final ConcurrentMap<MinecraftServer, ServerState> SERVER_STATES = new ConcurrentHashMap<>();
+    private static final MobEffectInstance SELECTED_GLOWING = new MobEffectInstance(MobEffects.GLOWING, Integer.MAX_VALUE, 0, false, false);
 
     private PlayerBatchService() {
     }
@@ -151,20 +160,25 @@ public final class PlayerBatchService {
         return affected;
     }
 
-    public static int teleportSelection(CommandSourceStack source, String directionName, int blocks) {
+    public static int teleportSelection(CommandSourceStack source, String directionName, String blockName) {
         Direction direction = parseDirection(directionName);
         if (direction == null) {
-            source.sendFailure(Component.literal("Direction must be one of: north, south, east, west, up, down."));
+            source.sendFailure(Component.literal("Direction must be one of: up, below, north, south, east, west."));
             return 0;
         }
 
-        int moved = state(source.getServer()).teleportSelection(source, direction, blocks);
+        if (!isKnownBlock(blockName)) {
+            source.sendFailure(Component.literal("Unknown block: " + blockName));
+            return 0;
+        }
+
+        int moved = state(source.getServer()).teleportSelection(source, direction, blockName);
         if (moved <= 0) {
-            source.sendFailure(Component.literal("No selected fake players were teleported."));
+            source.sendFailure(Component.literal("No selected fake players were teleported to nearby " + blockName + " blocks."));
             return 0;
         }
 
-        source.sendSuccess(() -> Component.literal("Teleported " + moved + " selected bot" + (moved == 1 ? "" : "s") + "."), true);
+        source.sendSuccess(() -> Component.literal("Teleported " + moved + " selected bot" + (moved == 1 ? "" : "s") + " near " + blockName + "."), true);
         return moved;
     }
 
@@ -209,8 +223,8 @@ public final class PlayerBatchService {
         runSelectedAction(player.createCommandSourceStack(), action);
     }
 
-    public static void teleportSelectionFromGui(ServerPlayer player, String direction, int blocks) {
-        teleportSelection(player.createCommandSourceStack(), direction, blocks);
+    public static void teleportSelectionFromGui(ServerPlayer player, String direction, String blockName) {
+        teleportSelection(player.createCommandSourceStack(), direction, blockName);
     }
 
     public static void clearSelectionFromGui(ServerPlayer player) {
@@ -277,7 +291,32 @@ public final class PlayerBatchService {
     }
 
     private static Direction parseDirection(String directionName) {
-        return Direction.byName(directionName == null ? "" : directionName.toLowerCase(Locale.ROOT));
+        if (directionName == null) {
+            return null;
+        }
+
+        return switch (directionName.toLowerCase(Locale.ROOT)) {
+            case "up" -> Direction.UP;
+            case "below", "down" -> Direction.DOWN;
+            case "north" -> Direction.NORTH;
+            case "south" -> Direction.SOUTH;
+            case "east" -> Direction.EAST;
+            case "west" -> Direction.WEST;
+            default -> null;
+        };
+    }
+
+    private static boolean isKnownBlock(String blockName) {
+        if (blockName == null || blockName.isBlank()) {
+            return false;
+        }
+
+        String normalized = normalizeBlockId(blockName);
+        return BuiltInRegistries.BLOCK.keySet().stream().anyMatch(key -> key.toString().equals(normalized));
+    }
+
+    private static String normalizeBlockId(String blockName) {
+        return blockName.contains(":") ? blockName.toLowerCase(Locale.ROOT) : "minecraft:" + blockName.toLowerCase(Locale.ROOT);
     }
 
     public record PlayerBatchSnapshot(
@@ -355,7 +394,7 @@ public final class PlayerBatchService {
         private int clearSelection() {
             List<EntityPlayerMPFake> selectedPlayers = selectedPlayers();
             for (EntityPlayerMPFake selectedPlayer : selectedPlayers) {
-                selectedPlayer.setGlowingTag(false);
+                removeSelectionGlow(selectedPlayer);
             }
             int cleared = selectedIds.size();
             selectedIds.clear();
@@ -369,11 +408,11 @@ public final class PlayerBatchService {
             boolean selected;
             if (selectedIds.contains(id)) {
                 selectedIds.remove(id);
-                player.setGlowingTag(false);
+                removeSelectionGlow(player);
                 selected = false;
             } else {
                 selectedIds.add(id);
-                player.setGlowingTag(true);
+                applySelectionGlow(player);
                 selected = true;
             }
             debug("{} selection for fake player {}", selected ? "Added" : "Removed", player.getGameProfile().name());
@@ -410,20 +449,30 @@ public final class PlayerBatchService {
             return succeeded;
         }
 
-        private int teleportSelection(CommandSourceStack source, Direction direction, int blocks) {
+        private int teleportSelection(CommandSourceStack source, Direction direction, String blockName) {
+            List<EntityPlayerMPFake> players = selectedPlayers();
+            if (players.isEmpty()) {
+                return 0;
+            }
+
+            ServerLevel level = (ServerLevel) players.getFirst().level();
+            List<BlockPos> targets = findNearestBlocks(level, source.getPosition(), blockName, players.size());
+            if (targets.isEmpty()) {
+                return 0;
+            }
+
             int moved = 0;
             CommandSourceStack executionSource = source.withSuppressedOutput();
-            for (EntityPlayerMPFake player : selectedPlayers()) {
-                double x = player.getX() + direction.getStepX() * blocks;
-                double y = player.getY() + direction.getStepY() * blocks;
-                double z = player.getZ() + direction.getStepZ() * blocks;
+            for (int index = 0; index < players.size() && index < targets.size(); index++) {
+                EntityPlayerMPFake player = players.get(index);
+                BlockPos target = targets.get(index).relative(direction);
                 String command = String.format(
                         Locale.ROOT,
                         "tp %s %.3f %.3f %.3f",
                         player.getGameProfile().name(),
-                        x,
-                        y,
-                        z
+                        target.getX() + 0.5D,
+                        target.getY(),
+                        target.getZ() + 0.5D
                 );
                 boolean success = CommandCompat.performPrefixedCommand(executionSource, command);
                 if (success) {
@@ -495,7 +544,7 @@ public final class PlayerBatchService {
                 activeBatch = null;
             }
             for (EntityPlayerMPFake player : selectedPlayers()) {
-                player.setGlowingTag(false);
+                removeSelectionGlow(player);
             }
             selectedIds.clear();
             subscribers.clear();
@@ -513,7 +562,7 @@ public final class PlayerBatchService {
         private final MinecraftServer server;
         private final CommandSourceStack feedbackSource;
         private final CommandSourceStack executionSource;
-        private final Deque<String> remainingNames;
+        private final Deque<SummonEntry> remainingEntries;
         private final int totalCount;
         private final ServerBossEvent bossBar;
         private boolean started;
@@ -524,7 +573,7 @@ public final class PlayerBatchService {
             this.server = server;
             this.feedbackSource = source;
             this.executionSource = source.withSuppressedOutput();
-            this.remainingNames = new ArrayDeque<>(names);
+            this.remainingEntries = new ArrayDeque<>(buildCircleEntries(source, names));
             this.totalCount = names.size();
             this.bossBar = new ServerBossEvent(
                     Component.literal("Summoning Bots..."),
@@ -547,15 +596,16 @@ public final class PlayerBatchService {
 
         private void tick(int maxSpawnsPerTick) {
             int processedThisTick = Math.max(1, maxSpawnsPerTick);
-            for (int index = 0; index < processedThisTick && !remainingNames.isEmpty(); index++) {
+            for (int index = 0; index < processedThisTick && !remainingEntries.isEmpty(); index++) {
                 summonNext();
             }
             updateBossBar();
         }
 
         private void summonNext() {
-            String nextName = remainingNames.removeFirst();
-            String command = "player " + nextName + " spawn";
+            SummonEntry nextEntry = remainingEntries.removeFirst();
+            String nextName = nextEntry.name();
+            String command = nextEntry.command();
             try {
                 boolean accepted = CommandCompat.performPrefixedCommand(executionSource, command);
                 if (accepted || server.getPlayerList().getPlayerByName(nextName) != null) {
@@ -572,11 +622,11 @@ public final class PlayerBatchService {
         }
 
         private BatchProgress progress() {
-            return new BatchProgress(true, totalCount, successCount, failCount, remainingNames.size());
+            return new BatchProgress(true, totalCount, successCount, failCount, remainingEntries.size());
         }
 
         private boolean isComplete() {
-            return remainingNames.isEmpty();
+            return remainingEntries.isEmpty();
         }
 
         private void finish() {
@@ -603,6 +653,101 @@ public final class PlayerBatchService {
             if (PlayerBatchConfig.isDebugEnabled()) {
                 PlayerBatch.LOGGER.info("[PlayerBatch] " + pattern, args);
             }
+        }
+
+        private List<SummonEntry> buildCircleEntries(CommandSourceStack source, List<String> names) {
+            List<SummonEntry> entries = new ArrayList<>(names.size());
+            Vec3 center = source.getPosition();
+            double radius = names.size() <= 1 ? 0.0D : Math.max(2.5D, names.size() / (2.0D * Math.PI));
+            for (int index = 0; index < names.size(); index++) {
+                double angle = names.size() <= 1 ? 0.0D : (Math.PI * 2.0D * index) / names.size();
+                double x = center.x + Math.cos(angle) * radius;
+                double z = center.z + Math.sin(angle) * radius;
+                double y = center.y;
+                String command = String.format(Locale.ROOT, "player %s spawn at %.3f %.3f %.3f", names.get(index), x, y, z);
+                entries.add(new SummonEntry(names.get(index), command));
+            }
+            return entries;
+        }
+
+        private record SummonEntry(String name, String command) {
+        }
+    }
+
+    private static void applySelectionGlow(EntityPlayerMPFake player) {
+        player.setGlowingTag(true);
+        player.addEffect(new MobEffectInstance(SELECTED_GLOWING));
+    }
+
+    private static void removeSelectionGlow(EntityPlayerMPFake player) {
+        player.setGlowingTag(false);
+        player.removeEffect(MobEffects.GLOWING);
+    }
+
+    private static List<BlockPos> findNearestBlocks(ServerLevel level, Vec3 center, String blockName, int needed) {
+        String targetBlock = normalizeBlockId(blockName);
+        Set<BlockPos> used = new HashSet<>();
+        List<BlockPos> matches = new ArrayList<>();
+        BlockPos centerPos = BlockPos.containing(center);
+        int centerY = centerPos.getY();
+
+        for (int radius = 0; radius <= 64 && matches.size() < needed; radius++) {
+            for (int x = centerPos.getX() - radius; x <= centerPos.getX() + radius && matches.size() < needed; x++) {
+                for (int z = centerPos.getZ() - radius; z <= centerPos.getZ() + radius && matches.size() < needed; z++) {
+                    if (Math.max(Math.abs(x - centerPos.getX()), Math.abs(z - centerPos.getZ())) != radius) {
+                        continue;
+                    }
+                    if (!level.hasChunkAt(new BlockPos(x, centerY, z))) {
+                        continue;
+                    }
+                    scanColumn(level, x, z, centerY, targetBlock, needed, used, matches);
+                }
+            }
+        }
+        return matches;
+    }
+
+    private static void scanColumn(
+            ServerLevel level,
+            int x,
+            int z,
+            int centerY,
+            String targetBlock,
+            int needed,
+            Set<BlockPos> used,
+            List<BlockPos> matches
+    ) {
+        int minY = level.getMinY();
+        int maxY = level.getMaxY() - 1;
+        for (int delta = 0; delta <= Math.max(centerY - minY, maxY - centerY) && matches.size() < needed; delta++) {
+            int upY = centerY + delta;
+            int downY = centerY - delta;
+            if (upY <= maxY) {
+                collectMatch(level, x, upY, z, targetBlock, used, matches);
+            }
+            if (delta > 0 && downY >= minY && matches.size() < needed) {
+                collectMatch(level, x, downY, z, targetBlock, used, matches);
+            }
+        }
+    }
+
+    private static void collectMatch(
+            ServerLevel level,
+            int x,
+            int y,
+            int z,
+            String targetBlock,
+            Set<BlockPos> used,
+            Collection<BlockPos> matches
+    ) {
+        BlockPos pos = new BlockPos(x, y, z);
+        if (used.contains(pos)) {
+            return;
+        }
+        String blockKey = BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock()).toString();
+        if (blockKey.equals(targetBlock)) {
+            used.add(pos);
+            matches.add(pos.immutable());
         }
     }
 }

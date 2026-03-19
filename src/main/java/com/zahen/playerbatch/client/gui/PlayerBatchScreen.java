@@ -20,7 +20,7 @@ public class PlayerBatchScreen extends Screen {
     private EditBox limitBox;
     private EditBox perTickBox;
     private EditBox directionBox;
-    private EditBox blocksBox;
+    private EditBox blockBox;
     private Button debugButton;
     private LimitSlider limitSlider;
     private PlayerBatchService.PlayerBatchSnapshot snapshot;
@@ -46,6 +46,7 @@ public class PlayerBatchScreen extends Screen {
         addRenderableWidget(Button.builder(Component.literal("Set Tick Rate"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SET_SPAWNS_PER_TICK,
                 "",
+                "",
                 parseInt(perTickBox.getValue(), snapshot.maxSpawnsPerTick()),
                 false
         ))).bounds(centerX - 90, startY + 28, 120, 20).build());
@@ -54,6 +55,7 @@ public class PlayerBatchScreen extends Screen {
             boolean newDebug = !snapshot.debugEnabled();
             send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                     PlayerBatchNetworking.ActionKind.SET_DEBUG,
+                    "",
                     "",
                     0,
                     newDebug
@@ -68,38 +70,40 @@ public class PlayerBatchScreen extends Screen {
         addRenderableWidget(Button.builder(Component.literal("Summon"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SUMMON,
                 namesBox.getValue(),
+                "",
                 parseInt(countBox.getValue(), 1),
                 false
         ))).bounds(centerX - 155, startY + 92, 90, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("Get Wand"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
-                PlayerBatchNetworking.ActionKind.GIVE_WAND, "", 0, false
+                PlayerBatchNetworking.ActionKind.GIVE_WAND, "", "", 0, false
         ))).bounds(centerX - 60, startY + 92, 90, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("Clear Selected"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
-                PlayerBatchNetworking.ActionKind.CLEAR_SELECTION, "", 0, false
+                PlayerBatchNetworking.ActionKind.CLEAR_SELECTION, "", "", 0, false
         ))).bounds(centerX + 35, startY + 92, 115, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("Hit Once"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
-                PlayerBatchNetworking.ActionKind.RUN_ACTION, "attack once", 0, false
+                PlayerBatchNetworking.ActionKind.RUN_ACTION, "attack once", "", 0, false
         ))).bounds(centerX - 155, startY + 126, 90, 20).build());
 
         addRenderableWidget(Button.builder(Component.literal("Jump"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
-                PlayerBatchNetworking.ActionKind.RUN_ACTION, "jump once", 0, false
+                PlayerBatchNetworking.ActionKind.RUN_ACTION, "jump once", "", 0, false
         ))).bounds(centerX - 60, startY + 126, 90, 20).build());
 
         directionBox = addRenderableWidget(new EditBox(font, centerX + 35, startY + 126, 55, 20, Component.literal("Dir")));
         directionBox.setValue("up");
-        blocksBox = addRenderableWidget(new EditBox(font, centerX + 95, startY + 126, 25, 20, Component.literal("Blocks")));
-        blocksBox.setValue("5");
+        blockBox = addRenderableWidget(new EditBox(font, centerX + 95, startY + 126, 55, 20, Component.literal("Block")));
+        blockBox.setValue("stone");
         addRenderableWidget(Button.builder(Component.literal("TP"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.TELEPORT_SELECTION,
                 directionBox.getValue(),
-                parseInt(blocksBox.getValue(), 5),
+                blockBox.getValue(),
+                0,
                 false
-        ))).bounds(centerX + 123, startY + 126, 27, 20).build());
+        ))).bounds(centerX + 153, startY + 126, 40, 20).build());
 
-        send(new PlayerBatchNetworking.PlayerBatchActionPayload(PlayerBatchNetworking.ActionKind.REQUEST_STATE, "", 0, false));
+        send(new PlayerBatchNetworking.PlayerBatchActionPayload(PlayerBatchNetworking.ActionKind.REQUEST_STATE, "", "", 0, false));
         applySnapshot(snapshot);
     }
 
@@ -121,19 +125,20 @@ public class PlayerBatchScreen extends Screen {
 
     @Override
     public void onClose() {
-        send(new PlayerBatchNetworking.PlayerBatchActionPayload(PlayerBatchNetworking.ActionKind.CLOSE_SCREEN, "", 0, false));
+        send(new PlayerBatchNetworking.PlayerBatchActionPayload(PlayerBatchNetworking.ActionKind.CLOSE_SCREEN, "", "", 0, false));
         Minecraft.getInstance().setScreen(parent);
     }
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        renderBackground(guiGraphics, mouseX, mouseY, partialTick);
+        guiGraphics.fillGradient(0, 0, width, height, 0xD0101724, 0xF0152233);
         guiGraphics.drawCenteredString(font, title, width / 2, 12, 0xFFFFFF);
         guiGraphics.drawString(font, "Live config and summon controls", width / 2 - 155, 18, 0xB0B0B0);
         guiGraphics.drawString(font, progressText(), width / 2 - 155, 160, 0xFFFFFF);
         guiGraphics.drawString(font, "Selected bots (" + snapshot.selectedNames().size() + "):", width / 2 - 155, 178, 0xFFFFFF);
+        guiGraphics.drawString(font, "Use /playerbatch wand, then right-click or left-click fake players with it.", width / 2 - 155, 170, 0xBDE6FF);
 
-        int y = 192;
+        int y = 204;
         if (snapshot.selectedNames().isEmpty()) {
             guiGraphics.drawString(font, "None", width / 2 - 155, y, 0x808080);
         } else {
@@ -151,7 +156,7 @@ public class PlayerBatchScreen extends Screen {
 
     private void applyLimit() {
         int value = parseInt(limitBox.getValue(), snapshot.maxSummonCount());
-        send(new PlayerBatchNetworking.PlayerBatchActionPayload(PlayerBatchNetworking.ActionKind.SET_LIMIT, "", value, false));
+        send(new PlayerBatchNetworking.PlayerBatchActionPayload(PlayerBatchNetworking.ActionKind.SET_LIMIT, "", "", value, false));
     }
 
     private Component debugLabel() {

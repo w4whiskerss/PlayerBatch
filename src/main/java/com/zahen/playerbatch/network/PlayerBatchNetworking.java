@@ -44,7 +44,7 @@ public final class PlayerBatchNetworking {
             case SET_DEBUG -> PlayerBatchService.applyDebugFromGui(player, payload.flag());
             case SUMMON -> PlayerBatchService.requestSummonFromGui(player, payload.number(), payload.text());
             case RUN_ACTION -> PlayerBatchService.runSelectedActionFromGui(player, payload.text());
-            case TELEPORT_SELECTION -> PlayerBatchService.teleportSelectionFromGui(player, payload.text(), payload.number());
+            case TELEPORT_SELECTION -> PlayerBatchService.teleportSelectionFromGui(player, payload.text(), payload.detail());
             case CLEAR_SELECTION -> PlayerBatchService.clearSelectionFromGui(player);
             case GIVE_WAND -> PlayerBatchService.giveWandFromGui(player);
         }
@@ -63,19 +63,20 @@ public final class PlayerBatchNetworking {
         GIVE_WAND
     }
 
-    public record PlayerBatchActionPayload(ActionKind kind, String text, int number, boolean flag) implements CustomPacketPayload {
+    public record PlayerBatchActionPayload(ActionKind kind, String text, String detail, int number, boolean flag) implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<PlayerBatchActionPayload> TYPE =
                 CustomPacketPayload.createType(PlayerBatch.MOD_ID + "_action");
         public static final StreamCodec<FriendlyByteBuf, PlayerBatchActionPayload> STREAM_CODEC =
                 StreamCodec.of((buffer, payload) -> payload.write(buffer), PlayerBatchActionPayload::new);
 
         public PlayerBatchActionPayload(FriendlyByteBuf buffer) {
-            this(ActionKind.values()[buffer.readVarInt()], buffer.readUtf(), buffer.readVarInt(), buffer.readBoolean());
+            this(ActionKind.values()[buffer.readVarInt()], buffer.readUtf(), buffer.readUtf(), buffer.readVarInt(), buffer.readBoolean());
         }
 
         private void write(FriendlyByteBuf buffer) {
             buffer.writeVarInt(kind.ordinal());
             buffer.writeUtf(text);
+            buffer.writeUtf(detail);
             buffer.writeVarInt(number);
             buffer.writeBoolean(flag);
         }
