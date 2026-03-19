@@ -22,6 +22,7 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayDeque;
@@ -658,12 +659,16 @@ public final class PlayerBatchService {
         private List<SummonEntry> buildCircleEntries(CommandSourceStack source, List<String> names) {
             List<SummonEntry> entries = new ArrayList<>(names.size());
             Vec3 center = source.getPosition();
+            ServerLevel level = source.getLevel();
             double radius = names.size() <= 1 ? 0.0D : Math.max(2.5D, names.size() / (2.0D * Math.PI));
             for (int index = 0; index < names.size(); index++) {
                 double angle = names.size() <= 1 ? 0.0D : (Math.PI * 2.0D * index) / names.size();
                 double x = center.x + Math.cos(angle) * radius;
                 double z = center.z + Math.sin(angle) * radius;
-                double y = center.y;
+                int blockX = BlockPos.containing(x, center.y, z).getX();
+                int blockZ = BlockPos.containing(x, center.y, z).getZ();
+                int topY = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockX, blockZ);
+                double y = topY;
                 String command = String.format(Locale.ROOT, "player %s spawn at %.3f %.3f %.3f", names.get(index), x, y, z);
                 entries.add(new SummonEntry(names.get(index), command));
             }

@@ -1,7 +1,6 @@
 package com.zahen.playerbatch.command;
 
 import com.mojang.brigadier.CommandDispatcher;
-import com.mojang.brigadier.arguments.ArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -110,7 +109,7 @@ public final class PlayerBatchCommand {
                         .then(Commands.literal("type=wand:selected")
                                 .then(Commands.argument("direction", StringArgumentType.word())
                                         .suggests((context, builder) -> SharedSuggestionProvider.suggest(DIRECTION_SUGGESTIONS, builder))
-                                        .then(Commands.argument("block", StringArgumentType.word())
+                                        .then(Commands.argument("block", StringArgumentType.string())
                                                 .suggests((context, builder) -> SharedSuggestionProvider.suggest(
                                                         BuiltInRegistries.BLOCK.keySet().stream().map(Object::toString),
                                                         builder
