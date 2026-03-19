@@ -109,7 +109,7 @@ public final class PlayerBatchCommand {
                         .then(Commands.literal("type=wand:selected")
                                 .then(Commands.argument("direction", StringArgumentType.word())
                                         .suggests((context, builder) -> SharedSuggestionProvider.suggest(DIRECTION_SUGGESTIONS, builder))
-                                        .then(Commands.argument("block", StringArgumentType.string())
+                                        .then(Commands.argument("block", StringArgumentType.greedyString())
                                                 .suggests((context, builder) -> SharedSuggestionProvider.suggest(
                                                         BuiltInRegistries.BLOCK.keySet().stream().map(Object::toString),
                                                         builder
