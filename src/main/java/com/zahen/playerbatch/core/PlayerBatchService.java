@@ -104,7 +104,7 @@ public final class PlayerBatchService {
                 return;
             }
 
-            int queued = state(source.getServer()).queueBatch(source, plannedNames, new BotConfig(formation, config.loadout()));
+            int queued = state(source.getServer()).queueBatch(source, plannedNames, new BotConfig(formation, config.loadout(), config.distributions()));
             if (queued <= 0) {
                 source.sendFailure(Component.literal("No valid bot names were available to queue."));
                 return;
@@ -1373,6 +1373,7 @@ public final class PlayerBatchService {
     }
 
     private static final class SummonBatch {
+        private static final int POST_SPAWN_SETTLE_TICKS = 20;
         private final ServerState owner;
         private final MinecraftServer server;
         private final CommandSourceStack feedbackSource;
@@ -1387,6 +1388,8 @@ public final class PlayerBatchService {
         private final BotConfig config;
         private final ServerBossEvent bossBar;
         private boolean started;
+        private boolean awaitingPostSpawnApply;
+        private int settleTicksRemaining = POST_SPAWN_SETTLE_TICKS;
         private int successCount;
         private int failCount;
 
@@ -1421,9 +1424,16 @@ public final class PlayerBatchService {
         }
 
         private void tick(int maxSpawnsPerTick) {
-            int processedThisTick = Math.max(1, maxSpawnsPerTick);
-            for (int index = 0; index < processedThisTick && !remainingEntries.isEmpty(); index++) {
-                summonNext();
+            if (!awaitingPostSpawnApply) {
+                int processedThisTick = Math.max(1, maxSpawnsPerTick);
+                for (int index = 0; index < processedThisTick && !remainingEntries.isEmpty(); index++) {
+                    summonNext();
+                }
+                if (remainingEntries.isEmpty()) {
+                    awaitingPostSpawnApply = true;
+                }
+            } else if (!pendingTagNames.isEmpty() && settleTicksRemaining > 0) {
+                settleTicksRemaining--;
             }
             updateBossBar();
         }
@@ -1441,11 +1451,9 @@ public final class PlayerBatchService {
                     BotConfig spawnConfig = plannedConfigs.getOrDefault(nextName, baseConfig());
                     if (spawnedPlayer instanceof EntityPlayerMPFake fakePlayer) {
                         owner.markManagedBot(fakePlayer);
-                        applyConfig(fakePlayer, spawnConfig);
-                    } else {
-                        pendingTagNames.add(nextName);
-                        pendingConfigs.put(nextName, spawnConfig);
                     }
+                    pendingTagNames.add(nextName);
+                    pendingConfigs.put(nextName, spawnConfig);
                     debug("Spawn accepted for {} in {} formation", nextName, formation);
                 } else {
                     failCount++;
@@ -1463,14 +1471,10 @@ public final class PlayerBatchService {
                 ServerPlayer queuedPlayer = server.getPlayerList().getPlayerByName(pendingName);
                 if (queuedPlayer instanceof EntityPlayerMPFake fakePlayer) {
                     owner.markManagedBot(fakePlayer);
-                    applyConfig(fakePlayer, pendingConfigs.getOrDefault(pendingName, baseConfig()));
                     tagged.add(pendingName);
                 }
             }
             pendingTagNames.removeAll(tagged);
-            for (String taggedName : tagged) {
-                pendingConfigs.remove(taggedName);
-            }
         }
 
         private void collectReservedNames(Collection<String> reserved) {
@@ -1487,11 +1491,12 @@ public final class PlayerBatchService {
         }
 
         private boolean isComplete() {
-            return remainingEntries.isEmpty();
+            return awaitingPostSpawnApply && (pendingTagNames.isEmpty() || settleTicksRemaining <= 0);
         }
 
         private void finish() {
             tagAllBatchBotsOnce();
+            applyDeferredBatchConfiguration();
             bossBar.removeAllPlayers();
             feedbackSource.sendSuccess(
                     () -> Component.literal(
@@ -1506,12 +1511,23 @@ public final class PlayerBatchService {
                 ServerPlayer player = server.getPlayerList().getPlayerByName(batchName);
                 if (player instanceof EntityPlayerMPFake fakePlayer) {
                     owner.markManagedBot(fakePlayer);
-                    applyConfig(fakePlayer, plannedConfigs.getOrDefault(batchName, baseConfig()));
                     pendingTagNames.remove(batchName);
-                    pendingConfigs.remove(batchName);
                 }
             }
             tryTagKnownPlayers();
+        }
+
+        private void applyDeferredBatchConfiguration() {
+            for (String batchName : batchNames) {
+                ServerPlayer player = server.getPlayerList().getPlayerByName(batchName);
+                if (player instanceof EntityPlayerMPFake fakePlayer) {
+                    cleanupManagedBot(fakePlayer);
+                    owner.markManagedBot(fakePlayer);
+                    applyConfig(fakePlayer, plannedConfigs.getOrDefault(batchName, baseConfig()));
+                }
+            }
+            pendingTagNames.clear();
+            pendingConfigs.clear();
         }
 
         private void applyConfig(EntityPlayerMPFake fakePlayer, BotConfig appliedConfig) {
