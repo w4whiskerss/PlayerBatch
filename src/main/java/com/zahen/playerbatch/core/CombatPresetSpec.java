@@ -17,7 +17,8 @@ public record CombatPresetSpec(
         int reach,
         boolean fakeHitEnabled,
         boolean stapEnabled,
-        boolean damageEnabled
+        boolean damageEnabled,
+        boolean flex360Enabled
 ) {
     public CombatPresetSpec {
         armorTier = armorTier == null ? ArmorTier.NONE : armorTier;

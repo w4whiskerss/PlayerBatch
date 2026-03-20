@@ -30,6 +30,8 @@ public final class CombatPresetParser {
             "-stap{false}",
             "-damage{true}",
             "-damage{false}",
+            "-360flex{true}",
+            "-360flex{false}",
             "-healingitems{false}",
             "-healingitems{true, golden_apple*32, splash_potion_of_healing*9}"
     );
@@ -49,6 +51,7 @@ public final class CombatPresetParser {
         boolean fakeHitEnabled = true;
         boolean stapEnabled = false;
         boolean damageEnabled = true;
+        boolean flex360Enabled = false;
 
         for (String token : splitOptions(rawOptions)) {
             String normalized = normalizeOption(token);
@@ -99,6 +102,10 @@ public final class CombatPresetParser {
                 damageEnabled = parseBraceBoolean(normalized, true);
                 continue;
             }
+            if (normalized.startsWith("360flex")) {
+                flex360Enabled = parseBraceBoolean(normalized, false);
+                continue;
+            }
             if (normalized.startsWith("healingitems")) {
                 HealingItemsParseResult result = parseHealingItems(normalized);
                 healingItemsEnabled = result.enabled();
@@ -117,7 +124,8 @@ public final class CombatPresetParser {
                 reach,
                 fakeHitEnabled,
                 stapEnabled,
-                damageEnabled
+                damageEnabled,
+                flex360Enabled
         );
     }
 
@@ -160,6 +168,10 @@ public final class CombatPresetParser {
                 parseBraceBoolean(normalized, true);
                 continue;
             }
+            if (normalized.startsWith("360flex")) {
+                parseBraceBoolean(normalized, false);
+                continue;
+            }
             if (normalized.startsWith("healingitems")) {
                 parseHealingItems(normalized);
                 continue;
@@ -171,15 +183,65 @@ public final class CombatPresetParser {
 
     public static List<String> suggestOptions(String currentInput) {
         String lower = currentInput == null ? "" : currentInput.toLowerCase(Locale.ROOT);
-        int marker = lower.lastIndexOf('-');
-        String active = marker >= 0 ? lower.substring(marker) : lower;
+        List<String> tokens = splitOptions(lower);
+        String active = tokens.isEmpty() ? lower.stripLeading() : tokens.get(tokens.size() - 1);
+        Set<String> usedKeys = new LinkedHashSet<>();
+        for (int index = 0; index < Math.max(0, tokens.size() - 1); index++) {
+            String normalized = normalizeOption(tokens.get(index));
+            String key = optionKey(normalized);
+            if (key != null) {
+                usedKeys.add(key);
+            }
+        }
+        String activeKey = optionKey(normalizeOption(active));
         List<String> suggestions = new ArrayList<>();
         for (String option : OPTION_SUGGESTIONS) {
+            String key = optionKey(normalizeOption(option));
+            if (key != null && usedKeys.contains(key) && !key.equals(activeKey)) {
+                continue;
+            }
             if (active.isBlank() || option.startsWith(active)) {
                 suggestions.add(option);
             }
         }
         return suggestions;
+    }
+
+    private static String optionKey(String normalized) {
+        if (normalized == null || normalized.isBlank()) {
+            return null;
+        }
+        if (CombatPresetSpec.ArmorTier.fromOptionToken(normalized) != CombatPresetSpec.ArmorTier.NONE) {
+            return "armor";
+        }
+        if (CombatPresetSpec.ToolTier.fromOptionToken(normalized) != CombatPresetSpec.ToolTier.NONE) {
+            return "tools";
+        }
+        if (normalized.equals("shield") || normalized.startsWith("totem")) {
+            return "offhand";
+        }
+        if (normalized.startsWith("selfheal")) {
+            return "selfheal";
+        }
+        if (normalized.startsWith("reach")) {
+            return "reach";
+        }
+        if (normalized.startsWith("fakehit")) {
+            return "fakehit";
+        }
+        if (normalized.startsWith("stap")) {
+            return "stap";
+        }
+        if (normalized.startsWith("damage")) {
+            return "damage";
+        }
+        if (normalized.startsWith("360flex")) {
+            return "360flex";
+        }
+        if (normalized.startsWith("healingitems")) {
+            return "healingitems";
+        }
+        return null;
     }
 
     public static List<String> healingItemSuggestions() {

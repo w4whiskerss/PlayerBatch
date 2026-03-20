@@ -329,8 +329,8 @@ public final class PlayerBatchCommand {
         String remaining = builder.getRemaining();
         int optionStart = findActiveOptionStart(remaining);
         SuggestionsBuilder optionBuilder = builder.createOffset(builder.getStart() + optionStart);
-        String activeOption = remaining.substring(optionStart).toLowerCase(Locale.ROOT);
-        for (String suggestion : CombatPresetParser.suggestOptions(activeOption)) {
+        String optionInput = remaining.substring(0, optionStart) + remaining.substring(optionStart).toLowerCase(Locale.ROOT);
+        for (String suggestion : CombatPresetParser.suggestOptions(optionInput)) {
             optionBuilder.suggest(suggestion);
         }
         return optionBuilder.buildFuture();

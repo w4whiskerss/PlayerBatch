@@ -1216,6 +1216,7 @@ public final class PlayerBatchService {
             brain.combatPreset = combatPreset;
             brain.healCooldownTicks = 0;
             brain.attackRetreatTicks = 0;
+            brain.flexSpinTicks = 0;
             brain.stuckTicks = 0;
             brain.scriptedUse = null;
             stopActionMovement(fakePlayer, true);
@@ -1389,6 +1390,9 @@ public final class PlayerBatchService {
             if (brain.attackRetreatTicks > 0) {
                 brain.attackRetreatTicks--;
             }
+            if (brain.flexSpinTicks > 0) {
+                brain.flexSpinTicks--;
+            }
             if (tickScriptedUse(fakePlayer, brain, threat)) {
                 return;
             }
@@ -1431,13 +1435,17 @@ public final class PlayerBatchService {
             }
 
             if (modes.contains(BotAiMode.COMBAT) && threat != null) {
+                if (combatPreset != null && combatPreset.flex360Enabled() && brain.flexSpinTicks > 0) {
+                    tick360Flex(fakePlayer, threat, brain);
+                    return;
+                }
                 lookAtCombatTarget(fakePlayer, threat, combatPreset);
                 double reach = combatPreset == null ? 3.0D : combatPreset.reach();
                 double preferredDistance = combatPreset != null && combatPreset.stapEnabled()
-                        ? Math.max(1.8D, reach - 0.65D)
+                        ? 3.0D
                         : Math.max(1.6D, reach - 0.25D);
                 if (brain.attackRetreatTicks > 0 && combatPreset != null && combatPreset.stapEnabled()) {
-                    moveAwayFromThreat(fakePlayer, threat, 0.75F, brain);
+                    moveAwayFromThreat(fakePlayer, threat, 1.0F, brain);
                 } else if (horizontalDistance(fakePlayer, threat) > preferredDistance || Math.abs(threat.getY() - fakePlayer.getY()) > 1.25D) {
                     moveTowardTarget(fakePlayer, threat, preferredDistance, 1.0F, combatPreset != null && combatPreset.stapEnabled(), brain);
                 } else {
@@ -1565,6 +1573,26 @@ public final class PlayerBatchService {
                 actionPack.start(EntityPlayerActionPack.ActionType.JUMP, EntityPlayerActionPack.Action.once());
             }
             updateStuckState(source, brain, true, threat);
+        }
+
+        private void tick360Flex(EntityPlayerMPFake source, LivingEntity target, BotBrain brain) {
+            EntityPlayerActionPack actionPack = actionPack(source);
+            actionPack.setSneaking(false);
+            actionPack.setSprinting(false);
+            actionPack.setForward(0.0F);
+            actionPack.setStrafing(0.0F);
+            applyVisibleYawSpin(source, 45.0F);
+            updateStuckState(source, brain, true, target);
+        }
+
+        private void applyVisibleYawSpin(EntityPlayerMPFake source, float yawDelta) {
+            float spunYaw = source.getYRot() + yawDelta;
+            source.setYRot(spunYaw);
+            source.yRotO = spunYaw;
+            source.setYHeadRot(spunYaw);
+            source.yHeadRotO = spunYaw;
+            source.yBodyRot = spunYaw;
+            source.yBodyRotO = spunYaw;
         }
 
         private boolean hasLowHealth(EntityPlayerMPFake fakePlayer) {
@@ -1969,7 +1997,11 @@ public final class PlayerBatchService {
             }
             source.resetAttackStrengthTicker();
             if (combatPreset != null && combatPreset.stapEnabled()) {
-                brain.attackRetreatTicks = 7;
+                brain.attackRetreatTicks = 9;
+                moveAwayFromThreat(source, target, 1.0F, brain);
+            }
+            if (combatPreset != null && combatPreset.flex360Enabled()) {
+                brain.flexSpinTicks = 8;
             }
         }
 
@@ -2664,6 +2696,7 @@ public final class PlayerBatchService {
         private CombatPresetSpec combatPreset;
         private int healCooldownTicks;
         private int attackRetreatTicks;
+        private int flexSpinTicks;
         private int stuckTicks;
         private int unstuckStrafeTicks;
         private float unstuckStrafeDirection = 1.0F;
