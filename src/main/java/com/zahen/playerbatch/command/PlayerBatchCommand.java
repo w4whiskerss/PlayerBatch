@@ -5,6 +5,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
+import com.zahen.playerbatch.core.BotAiMode;
 import com.zahen.playerbatch.core.PlayerBatchService;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -16,6 +17,14 @@ import java.util.List;
 
 public final class PlayerBatchCommand {
     private static final List<String> DIRECTION_SUGGESTIONS = List.of("up", "below", "north", "south", "east", "west");
+    private static final List<String> AI_MODE_SUGGESTIONS = List.of(
+            BotAiMode.IDLE.displayName(),
+            BotAiMode.COMBAT.displayName(),
+            BotAiMode.PATROL.displayName(),
+            BotAiMode.GUARD.displayName(),
+            BotAiMode.FOLLOW.displayName(),
+            BotAiMode.FLEE.displayName()
+    );
     private static final List<String> ACTION_SUGGESTIONS = List.of(
             "stop",
             "use",
@@ -69,12 +78,23 @@ public final class PlayerBatchCommand {
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(buildPlayerBatchRoot());
+        dispatcher.register(buildPbAlias());
         dispatcher.register(buildPlayerSummonAlias());
     }
 
     private static LiteralArgumentBuilder<CommandSourceStack> buildPlayerBatchRoot() {
-        return Commands.literal("playerbatch")
+        return buildRoot("playerbatch");
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> buildPbAlias() {
+        return buildRoot("pb");
+    }
+
+    private static LiteralArgumentBuilder<CommandSourceStack> buildRoot(String root) {
+        return Commands.literal(root)
                 .executes(context -> PlayerBatchService.openGui(context.getSource()))
+                .then(Commands.literal("gui")
+                        .executes(context -> PlayerBatchService.openGui(context.getSource())))
                 .then(Commands.literal("wand")
                         .executes(context -> PlayerBatchService.giveSelectionWand(context.getSource())))
                 .then(Commands.literal("clearselection")
@@ -113,6 +133,50 @@ public final class PlayerBatchCommand {
                                 .executes(context -> PlayerBatchService.setDebug(context.getSource(), true)))
                         .then(Commands.literal("off")
                                 .executes(context -> PlayerBatchService.setDebug(context.getSource(), false))))
+                .then(Commands.literal("group")
+                        .then(Commands.literal("create")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .executes(context -> PlayerBatchService.createGroup(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "name")
+                                        ))))
+                        .then(Commands.literal("assign")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .executes(context -> PlayerBatchService.assignSelectionToGroup(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "name")
+                                        ))))
+                        .then(Commands.literal("remove")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .executes(context -> PlayerBatchService.removeSelectionFromGroup(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "name")
+                                        ))))
+                        .then(Commands.literal("list")
+                                .executes(context -> PlayerBatchService.listGroups(context.getSource()))))
+                .then(Commands.literal("ai")
+                        .then(Commands.literal("set")
+                                .then(Commands.argument("mode", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(AI_MODE_SUGGESTIONS, builder))
+                                        .executes(context -> PlayerBatchService.setSelectedAiMode(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "mode")
+                                        ))
+                                        .then(Commands.literal("group")
+                                                .then(Commands.argument("name", StringArgumentType.word())
+                                                        .executes(context -> PlayerBatchService.setGroupAiMode(
+                                                                context.getSource(),
+                                                                StringArgumentType.getString(context, "name"),
+                                                                StringArgumentType.getString(context, "mode")
+                                                        ))))))
+                        .then(Commands.literal("status")
+                                .executes(context -> PlayerBatchService.describeSelectedAi(context.getSource()))
+                                .then(Commands.literal("group")
+                                        .then(Commands.argument("name", StringArgumentType.word())
+                                                .executes(context -> PlayerBatchService.describeGroupAi(
+                                                        context.getSource(),
+                                                        StringArgumentType.getString(context, "name")
+                                                ))))))
                 .then(Commands.literal("command")
                         .then(Commands.argument("action", StringArgumentType.greedyString())
                                 .suggests((context, builder) -> SharedSuggestionProvider.suggest(ACTION_SUGGESTIONS, builder))

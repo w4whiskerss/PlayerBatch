@@ -118,6 +118,10 @@ public final class PlayerBatchNetworking {
             for (String selectedName : snapshot.selectedNames()) {
                 buffer.writeUtf(selectedName);
             }
+            buffer.writeVarInt(snapshot.groups().size());
+            for (String group : snapshot.groups()) {
+                buffer.writeUtf(group);
+            }
         }
 
         private static PlayerBatchService.PlayerBatchSnapshot readSnapshot(FriendlyByteBuf buffer) {
@@ -136,6 +140,11 @@ public final class PlayerBatchNetworking {
             for (int index = 0; index < selectedSize; index++) {
                 selectedNames.add(buffer.readUtf());
             }
+            int groupSize = buffer.readVarInt();
+            List<String> groups = new ArrayList<>();
+            for (int index = 0; index < groupSize; index++) {
+                groups.add(buffer.readUtf());
+            }
             return new PlayerBatchService.PlayerBatchSnapshot(
                     openScreen,
                     maxSummonCount,
@@ -147,7 +156,8 @@ public final class PlayerBatchNetworking {
                     failCount,
                     pendingCount,
                     queuedBatches,
-                    selectedNames
+                    selectedNames,
+                    groups
             );
         }
 

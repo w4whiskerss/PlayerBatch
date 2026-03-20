@@ -1,6 +1,6 @@
 # PlayerBatch
 
-`PlayerBatch` is a Fabric + Carpet addon for Minecraft `1.21.11` that lets you summon, select, and control large groups of fake players from commands or a GUI.
+`PlayerBatch` is a Fabric + Carpet addon for Minecraft `1.21.11` that lets you summon, select, group, and control large batches of fake players from commands or a GUI.
 
 ## What It Does
 
@@ -8,6 +8,9 @@
 - Queues large batches safely to reduce lag spikes
 - Shows live summon progress with a boss bar
 - Lets you select fake players with a wand and control them in bulk
+- Tags every PlayerBatch-managed fake player with `bot`
+- Supports named bot groups with shared AI modes
+- Adds a first-pass tick-based AI foundation for managed bots
 - Includes an in-game GUI for quick batch control
 - Supports named summons, fallback names, and generated names when needed
 
@@ -20,6 +23,9 @@
 - Configurable spawn rate with `/playerbatch spawnspertick <number>`
 - Selection wand with glowing selected bots
 - Batch actions for selected fake players
+- Group creation, assignment, removal, and listing
+- AI mode assignment for selected bots or full groups
+- `/pb` alias for the core PlayerBatch command tree
 - Optional Mod Menu config entry
 - Debug logging toggle for troubleshooting
 
@@ -34,6 +40,7 @@
 ### PlayerBatch Menu
 
 - `/playerbatch`
+- `/pb`
 
 Opens the PlayerBatch GUI.
 
@@ -49,11 +56,48 @@ Opens the PlayerBatch GUI.
 - `/playerbatch wand`
 - `/playerbatch clearselection`
 - `/playerbatch listselection`
+- `/playerbatch select all`
+- `/playerbatch select range <distance>`
+- `/playerbatch select count <number>`
 
 ### Selected Bot Actions
 
 - `/playerbatch command <action>`
 - `/playerbatch tp type=wand:selected <direction> <blocks>`
+
+### Groups
+
+- `/playerbatch group create <name>`
+- `/playerbatch group assign <name>`
+- `/playerbatch group remove <name>`
+- `/playerbatch group list`
+
+These commands operate on the current PlayerBatch selection and only affect managed bots tagged with `bot`.
+
+### AI Foundation
+
+- `/playerbatch ai set <mode>`
+- `/playerbatch ai set <mode> group <name>`
+- `/playerbatch ai status`
+- `/playerbatch ai status group <name>`
+
+Supported modes right now:
+
+- `idle`
+- `combat`
+- `patrol`
+- `guard`
+- `follow`
+- `flee`
+
+Current AI behavior is intentionally lightweight and server-side:
+
+- `idle` keeps the bot passive
+- `patrol` rotates the bot to simulate patrol scanning
+- `follow` tracks the nearest real player
+- `guard` watches the nearest nearby threat
+- `combat` faces and attacks nearby threats
+- `flee` moves away from nearby threats
 
 ## Installation
 
@@ -94,6 +138,28 @@ These settings can be changed live in game and are saved automatically.
 3. The fake player becomes selected and glows
 4. Right-click again to remove it from selection
 5. Use batch commands on the selected group
+
+Only PlayerBatch-managed fake players tagged with `bot` can be selected and controlled by the current group/AI systems.
+
+## Groups And AI
+
+This release adds the first foundation for the larger bot-control roadmap.
+
+What is included now:
+
+- Persistent in-memory server state for bot groups
+- Shared AI mode per group
+- Per-bot AI brain state for selected bots
+- Tick-driven AI updates on the server
+- GUI state sync showing live group summaries
+
+What this foundation is preparing for next:
+
+- Targeting rules
+- event triggers
+- pathfinding
+- scenario orchestration
+- preset serialization for groups and AI
 
 ## Name Rules
 

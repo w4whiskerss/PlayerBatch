@@ -149,6 +149,9 @@ public class PlayerBatchScreen extends Screen {
         guiGraphics.drawString(font, progressText(), width / 2 - 155, 180, 0xFFFFFF);
         guiGraphics.drawString(font, "Selected bots (" + snapshot.selectedNames().size() + "):", width / 2 - 155, 198, 0xFFFFFF);
         guiGraphics.drawString(font, "Use /playerbatch wand, then right-click or left-click fake players with it.", width / 2 - 155, 190, 0xBDE6FF);
+        if (!snapshot.groups().isEmpty()) {
+            guiGraphics.drawString(font, "Groups: " + String.join(" | ", snapshot.groups()), width / 2 - 155, 170, 0xC7F0C0);
+        }
 
         int y = 214;
         if (snapshot.selectedNames().isEmpty()) {

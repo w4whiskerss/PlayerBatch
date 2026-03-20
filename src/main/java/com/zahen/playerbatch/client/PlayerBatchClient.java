@@ -8,7 +8,7 @@ import net.minecraft.client.Minecraft;
 
 public final class PlayerBatchClient implements ClientModInitializer {
     private static PlayerBatchService.PlayerBatchSnapshot latestSnapshot = new PlayerBatchService.PlayerBatchSnapshot(
-            false, 256, 4, false, false, 0, 0, 0, 0, 0, java.util.List.of()
+            false, 256, 4, false, false, 0, 0, 0, 0, 0, java.util.List.of(), java.util.List.of()
     );
 
     @Override

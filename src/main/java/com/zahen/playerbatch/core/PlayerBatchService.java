@@ -21,6 +21,7 @@ import net.minecraft.world.BossEvent;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
@@ -30,10 +31,13 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -41,6 +45,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 public final class PlayerBatchService {
+    private static final String BOT_TAG = "bot";
+    private static final int AI_TICK_INTERVAL = 10;
     private static final ConcurrentMap<MinecraftServer, ServerState> SERVER_STATES = new ConcurrentHashMap<>();
     private static final MobEffectInstance SELECTED_GLOWING = new MobEffectInstance(MobEffects.GLOWING, Integer.MAX_VALUE, 0, false, false);
 
@@ -222,6 +228,96 @@ public final class PlayerBatchService {
         return 1;
     }
 
+    public static int createGroup(CommandSourceStack source, String rawName) {
+        GroupResult result = state(source.getServer()).createGroup(rawName);
+        if (!result.success()) {
+            source.sendFailure(Component.literal(result.message()));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(result.message()), true);
+        return 1;
+    }
+
+    public static int assignSelectionToGroup(CommandSourceStack source, String rawName) {
+        GroupResult result = state(source.getServer()).assignSelectionToGroup(rawName);
+        if (!result.success()) {
+            source.sendFailure(Component.literal(result.message()));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(result.message()), true);
+        return result.affected();
+    }
+
+    public static int removeSelectionFromGroup(CommandSourceStack source, String rawName) {
+        GroupResult result = state(source.getServer()).removeSelectionFromGroup(rawName);
+        if (!result.success()) {
+            source.sendFailure(Component.literal(result.message()));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(result.message()), true);
+        return result.affected();
+    }
+
+    public static int listGroups(CommandSourceStack source) {
+        List<String> groups = state(source.getServer()).groupSummaries();
+        if (groups.isEmpty()) {
+            source.sendFailure(Component.literal("No bot groups exist yet."));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Groups: " + String.join(" | ", groups)), false);
+        return groups.size();
+    }
+
+    public static int setSelectedAiMode(CommandSourceStack source, String rawMode) {
+        BotAiMode mode = BotAiMode.fromString(rawMode);
+        if (mode == null) {
+            source.sendFailure(Component.literal("Unknown AI mode. Use: idle, combat, patrol, guard, follow, flee."));
+            return 0;
+        }
+        AiResult result = state(source.getServer()).setSelectedAiMode(mode);
+        if (!result.success()) {
+            source.sendFailure(Component.literal(result.message()));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(result.message()), true);
+        return result.affected();
+    }
+
+    public static int setGroupAiMode(CommandSourceStack source, String rawName, String rawMode) {
+        BotAiMode mode = BotAiMode.fromString(rawMode);
+        if (mode == null) {
+            source.sendFailure(Component.literal("Unknown AI mode. Use: idle, combat, patrol, guard, follow, flee."));
+            return 0;
+        }
+        AiResult result = state(source.getServer()).setGroupAiMode(rawName, mode);
+        if (!result.success()) {
+            source.sendFailure(Component.literal(result.message()));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(result.message()), true);
+        return result.affected();
+    }
+
+    public static int describeSelectedAi(CommandSourceStack source) {
+        List<String> lines = state(source.getServer()).selectedAiSummary();
+        if (lines.isEmpty()) {
+            source.sendFailure(Component.literal("No selected managed bots to describe."));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(String.join(" | ", lines)), false);
+        return lines.size();
+    }
+
+    public static int describeGroupAi(CommandSourceStack source, String rawName) {
+        String summary = state(source.getServer()).groupAiSummary(rawName);
+        if (summary == null) {
+            source.sendFailure(Component.literal("Unknown group: " + rawName));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(summary), false);
+        return 1;
+    }
+
     public static void handleGuiClosed(ServerPlayer player) {
         state(player.createCommandSourceStack().getServer()).removeSubscriber(player.getUUID());
     }
@@ -276,9 +372,10 @@ public final class PlayerBatchService {
     }
 
     public static boolean toggleSelection(ServerPlayer actor, Entity entity) {
-        if (!(entity instanceof EntityPlayerMPFake fakePlayer)) {
+        if (!isManagedBot(entity)) {
             return false;
         }
+        EntityPlayerMPFake fakePlayer = (EntityPlayerMPFake) entity;
 
         boolean selected = state(actor.createCommandSourceStack().getServer()).toggleSelection(fakePlayer);
         actor.displayClientMessage(
@@ -315,7 +412,8 @@ public final class PlayerBatchService {
                 progress.failCount(),
                 progress.pendingCount(),
                 state.queueDepth(),
-                selectedNames
+                selectedNames,
+                state.groupSummaries()
         );
     }
 
@@ -328,6 +426,10 @@ public final class PlayerBatchService {
 
     private static ServerState state(MinecraftServer server) {
         return SERVER_STATES.computeIfAbsent(server, ServerState::new);
+    }
+
+    private static boolean isManagedBot(Entity entity) {
+        return entity instanceof EntityPlayerMPFake fakePlayer && fakePlayer.getTags().contains(BOT_TAG);
     }
 
     private static Direction parseDirection(String directionName) {
@@ -370,7 +472,8 @@ public final class PlayerBatchService {
             int failCount,
             int pendingCount,
             int queuedBatches,
-            List<String> selectedNames
+            List<String> selectedNames,
+            List<String> groups
     ) {
     }
 
@@ -385,8 +488,11 @@ public final class PlayerBatchService {
         private final Deque<SummonBatch> queue = new ArrayDeque<>();
         private final Set<UUID> selectedIds = new LinkedHashSet<>();
         private final Set<UUID> subscribers = new LinkedHashSet<>();
+        private final Map<String, BotGroup> groups = new LinkedHashMap<>();
+        private final Map<UUID, BotBrain> brains = new HashMap<>();
         private SummonBatch activeBatch;
         private int syncCooldown;
+        private int aiTickCooldown;
 
         private ServerState(MinecraftServer server) {
             this.server = server;
@@ -405,6 +511,7 @@ public final class PlayerBatchService {
         private void tick() {
             cleanupSelection();
             cleanupSubscribers();
+            cleanupGroupsAndBrains();
 
             if (activeBatch == null && !queue.isEmpty()) {
                 activeBatch = queue.removeFirst();
@@ -429,6 +536,11 @@ public final class PlayerBatchService {
                     syncCooldown--;
                 }
             }
+
+            if (aiTickCooldown-- <= 0) {
+                tickAi();
+                aiTickCooldown = AI_TICK_INTERVAL;
+            }
         }
 
         private int clearSelection() {
@@ -446,7 +558,8 @@ public final class PlayerBatchService {
         private int selectAll() {
             int count = 0;
             for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-                if (player instanceof EntityPlayerMPFake fakePlayer) {
+                if (isManagedBot(player)) {
+                    EntityPlayerMPFake fakePlayer = (EntityPlayerMPFake) player;
                     if (selectedIds.add(fakePlayer.getUUID())) {
                         applySelectionGlow(fakePlayer);
                     } else {
@@ -596,10 +709,125 @@ public final class PlayerBatchService {
 
         private List<EntityPlayerMPFake> fakePlayers() {
             return server.getPlayerList().getPlayers().stream()
-                    .filter(player -> player instanceof EntityPlayerMPFake)
+                    .filter(PlayerBatchService::isManagedBot)
                     .map(player -> (EntityPlayerMPFake) player)
                     .filter(Objects::nonNull)
                     .toList();
+        }
+
+        private GroupResult createGroup(String rawName) {
+            String key = normalizeGroupName(rawName);
+            if (key == null) {
+                return GroupResult.failure("Group name must use 1-32 letters, numbers, underscores, or hyphens.");
+            }
+            if (groups.containsKey(key)) {
+                return GroupResult.failure("Group already exists: " + rawName);
+            }
+            groups.put(key, new BotGroup(rawName));
+            broadcast(false);
+            return GroupResult.success("Created group '" + rawName + "'.", 1);
+        }
+
+        private GroupResult assignSelectionToGroup(String rawName) {
+            BotGroup group = groups.get(normalizeGroupName(rawName));
+            if (group == null) {
+                return GroupResult.failure("Unknown group: " + rawName);
+            }
+            List<EntityPlayerMPFake> players = selectedPlayers();
+            if (players.isEmpty()) {
+                return GroupResult.failure("Select one or more managed bots first.");
+            }
+            int added = 0;
+            for (EntityPlayerMPFake player : players) {
+                BotBrain brain = ensureBrain(player);
+                group.memberIds().add(player.getUUID());
+                brain.groupKey = normalizeGroupName(group.displayName());
+                if (brain.mode != group.sharedMode()) {
+                    brain.mode = group.sharedMode();
+                }
+                added++;
+            }
+            broadcast(false);
+            return GroupResult.success("Assigned " + added + " selected bot" + suffix(added) + " to group '" + group.displayName() + "'.", added);
+        }
+
+        private GroupResult removeSelectionFromGroup(String rawName) {
+            BotGroup group = groups.get(normalizeGroupName(rawName));
+            if (group == null) {
+                return GroupResult.failure("Unknown group: " + rawName);
+            }
+            List<EntityPlayerMPFake> players = selectedPlayers();
+            if (players.isEmpty()) {
+                return GroupResult.failure("Select one or more managed bots first.");
+            }
+            int removed = 0;
+            for (EntityPlayerMPFake player : players) {
+                if (group.memberIds().remove(player.getUUID())) {
+                    BotBrain brain = ensureBrain(player);
+                    if (Objects.equals(brain.groupKey, normalizeGroupName(group.displayName()))) {
+                        brain.groupKey = null;
+                    }
+                    removed++;
+                }
+            }
+            broadcast(false);
+            return GroupResult.success("Removed " + removed + " selected bot" + suffix(removed) + " from group '" + group.displayName() + "'.", removed);
+        }
+
+        private List<String> groupSummaries() {
+            List<String> summaries = new ArrayList<>();
+            for (BotGroup group : groups.values()) {
+                summaries.add(group.displayName() + "=" + group.memberIds().size() + " [" + group.sharedMode().displayName() + "]");
+            }
+            return summaries;
+        }
+
+        private AiResult setSelectedAiMode(BotAiMode mode) {
+            List<EntityPlayerMPFake> players = selectedPlayers();
+            if (players.isEmpty()) {
+                return AiResult.failure("Select one or more managed bots first.");
+            }
+            for (EntityPlayerMPFake player : players) {
+                ensureBrain(player).mode = mode;
+            }
+            broadcast(false);
+            return AiResult.success("Set AI mode to '" + mode.displayName() + "' for " + players.size() + " selected bot" + suffix(players.size()) + ".", players.size());
+        }
+
+        private AiResult setGroupAiMode(String rawName, BotAiMode mode) {
+            BotGroup group = groups.get(normalizeGroupName(rawName));
+            if (group == null) {
+                return AiResult.failure("Unknown group: " + rawName);
+            }
+            group.sharedMode = mode;
+            int affected = 0;
+            for (UUID memberId : List.copyOf(group.memberIds())) {
+                ServerPlayer player = server.getPlayerList().getPlayer(memberId);
+                if (player instanceof EntityPlayerMPFake fakePlayer && isManagedBot(fakePlayer)) {
+                    ensureBrain(fakePlayer).mode = mode;
+                    affected++;
+                }
+            }
+            broadcast(false);
+            return AiResult.success("Set group '" + group.displayName() + "' AI mode to '" + mode.displayName() + "' for " + affected + " bot" + suffix(affected) + ".", affected);
+        }
+
+        private List<String> selectedAiSummary() {
+            List<String> summary = new ArrayList<>();
+            for (EntityPlayerMPFake player : selectedPlayers()) {
+                BotBrain brain = ensureBrain(player);
+                String groupText = brain.groupKey == null ? "ungrouped" : groups.getOrDefault(brain.groupKey, new BotGroup(brain.groupKey)).displayName();
+                summary.add(player.getGameProfile().name() + "=" + brain.mode.displayName() + " (" + groupText + ")");
+            }
+            return summary;
+        }
+
+        private String groupAiSummary(String rawName) {
+            BotGroup group = groups.get(normalizeGroupName(rawName));
+            if (group == null) {
+                return null;
+            }
+            return "Group '" + group.displayName() + "' has " + group.memberIds().size() + " bot" + suffix(group.memberIds().size()) + " with shared AI mode '" + group.sharedMode().displayName() + "'.";
         }
 
         private void addSubscriber(UUID subscriber) {
@@ -648,7 +876,88 @@ public final class PlayerBatchService {
             }
             selectedIds.clear();
             subscribers.clear();
+            groups.clear();
+            brains.clear();
             queue.clear();
+        }
+
+        private void cleanupGroupsAndBrains() {
+            Set<UUID> liveBots = new HashSet<>();
+            for (EntityPlayerMPFake fakePlayer : fakePlayers()) {
+                liveBots.add(fakePlayer.getUUID());
+                ensureBrain(fakePlayer);
+            }
+            brains.keySet().removeIf(id -> !liveBots.contains(id));
+            for (BotGroup group : groups.values()) {
+                group.memberIds().removeIf(id -> !liveBots.contains(id));
+            }
+        }
+
+        private BotBrain ensureBrain(EntityPlayerMPFake player) {
+            return brains.computeIfAbsent(player.getUUID(), id -> new BotBrain());
+        }
+
+        private void tickAi() {
+            for (EntityPlayerMPFake fakePlayer : fakePlayers()) {
+                BotBrain brain = ensureBrain(fakePlayer);
+                tickBrain(fakePlayer, brain);
+            }
+        }
+
+        private void tickBrain(EntityPlayerMPFake fakePlayer, BotBrain brain) {
+            switch (brain.mode) {
+                case IDLE -> {
+                }
+                case PATROL -> {
+                    float nextYaw = fakePlayer.getYRot() + 25.0F;
+                    fakePlayer.setYRot(nextYaw);
+                    fakePlayer.setYHeadRot(nextYaw);
+                }
+                case FOLLOW -> lookAtTarget(fakePlayer, findNearestPlayerTarget(fakePlayer, 24.0D));
+                case GUARD -> lookAtTarget(fakePlayer, findNearestThreat(fakePlayer, 16.0D));
+                case COMBAT -> {
+                    LivingEntity target = findNearestThreat(fakePlayer, 10.0D);
+                    if (target != null) {
+                        lookAtTarget(fakePlayer, target);
+                        if (fakePlayer.distanceToSqr(target) <= 9.0D) {
+                            fakePlayer.swing(fakePlayer.getUsedItemHand(), true);
+                            fakePlayer.attack(target);
+                        }
+                    }
+                }
+                case FLEE -> {
+                    LivingEntity target = findNearestThreat(fakePlayer, 12.0D);
+                    if (target != null) {
+                        Vec3 away = fakePlayer.position().subtract(target.position()).normalize().scale(0.35D);
+                        fakePlayer.setDeltaMovement(away.x, Math.max(0.1D, fakePlayer.getDeltaMovement().y), away.z);
+                    }
+                }
+            }
+        }
+
+        private ServerPlayer findNearestPlayerTarget(EntityPlayerMPFake source, double range) {
+            return server.getPlayerList().getPlayers().stream()
+                    .filter(player -> !player.getUUID().equals(source.getUUID()))
+                    .filter(player -> !(player instanceof EntityPlayerMPFake))
+                    .filter(player -> player.level() == source.level())
+                    .filter(player -> player.distanceToSqr(source) <= range * range)
+                    .min(Comparator.comparingDouble(player -> player.distanceToSqr(source)))
+                    .orElse(null);
+        }
+
+        private LivingEntity findNearestThreat(EntityPlayerMPFake source, double range) {
+            return source.level().getEntitiesOfClass(LivingEntity.class, source.getBoundingBox().inflate(range), entity ->
+                            !entity.getUUID().equals(source.getUUID()) && !(entity instanceof EntityPlayerMPFake managed && managed.getTags().contains(BOT_TAG)))
+                    .stream()
+                    .min(Comparator.comparingDouble(entity -> entity.distanceToSqr(source)))
+                    .orElse(null);
+        }
+
+        private void lookAtTarget(EntityPlayerMPFake source, Entity target) {
+            if (target == null) {
+                return;
+            }
+            source.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, target.position().add(0.0D, target.getEyeHeight(), 0.0D));
         }
 
         private void debug(String pattern, Object... args) {
@@ -708,8 +1017,12 @@ public final class PlayerBatchService {
             String command = nextEntry.command();
             try {
                 boolean accepted = CommandCompat.performPrefixedCommand(executionSource, command);
-                if (accepted || server.getPlayerList().getPlayerByName(nextName) != null) {
+                ServerPlayer spawnedPlayer = server.getPlayerList().getPlayerByName(nextName);
+                if (accepted || spawnedPlayer != null) {
                     successCount++;
+                    if (spawnedPlayer != null) {
+                        spawnedPlayer.addTag(BOT_TAG);
+                    }
                     debug("Spawn accepted for {}", nextName);
                 } else {
                     failCount++;
@@ -866,6 +1179,68 @@ public final class PlayerBatchService {
         }
         int count = Math.max(1, players.size());
         return new Vec3(x / count, y / count, z / count);
+    }
+
+    private static String normalizeGroupName(String rawName) {
+        if (rawName == null) {
+            return null;
+        }
+        String trimmed = rawName.trim();
+        if (trimmed.isEmpty() || trimmed.length() > 32 || !trimmed.matches("[A-Za-z0-9_-]+")) {
+            return null;
+        }
+        return trimmed.toLowerCase(Locale.ROOT);
+    }
+
+    private static String suffix(int count) {
+        return count == 1 ? "" : "s";
+    }
+
+    private record GroupResult(boolean success, String message, int affected) {
+        private static GroupResult success(String message, int affected) {
+            return new GroupResult(true, message, affected);
+        }
+
+        private static GroupResult failure(String message) {
+            return new GroupResult(false, message, 0);
+        }
+    }
+
+    private record AiResult(boolean success, String message, int affected) {
+        private static AiResult success(String message, int affected) {
+            return new AiResult(true, message, affected);
+        }
+
+        private static AiResult failure(String message) {
+            return new AiResult(false, message, 0);
+        }
+    }
+
+    private static final class BotGroup {
+        private final String displayName;
+        private final Set<UUID> memberIds = new LinkedHashSet<>();
+        private BotAiMode sharedMode = BotAiMode.IDLE;
+
+        private BotGroup(String displayName) {
+            this.displayName = displayName;
+        }
+
+        private String displayName() {
+            return displayName;
+        }
+
+        private Set<UUID> memberIds() {
+            return memberIds;
+        }
+
+        private BotAiMode sharedMode() {
+            return sharedMode;
+        }
+    }
+
+    private static final class BotBrain {
+        private BotAiMode mode = BotAiMode.IDLE;
+        private String groupKey;
     }
 }
 
