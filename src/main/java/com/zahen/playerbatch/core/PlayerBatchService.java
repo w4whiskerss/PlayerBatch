@@ -25,6 +25,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 
@@ -1560,7 +1561,18 @@ public final class PlayerBatchService {
         }
 
         private void applyConfig(EntityPlayerMPFake fakePlayer, BotConfig appliedConfig) {
-            appliedConfig.loadout().applyTo(fakePlayer);
+            var gameRules = fakePlayer.level().getGameRules();
+            boolean previous = gameRules.get(GameRules.SHOW_ADVANCEMENT_MESSAGES);
+            if (previous) {
+                gameRules.set(GameRules.SHOW_ADVANCEMENT_MESSAGES, false, server);
+            }
+            try {
+                appliedConfig.loadout().applyTo(fakePlayer);
+            } finally {
+                if (previous) {
+                    gameRules.set(GameRules.SHOW_ADVANCEMENT_MESSAGES, true, server);
+                }
+            }
         }
 
         private BotConfig baseConfig() {
