@@ -33,6 +33,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.alchemy.PotionContents;
 import net.minecraft.world.item.alchemy.Potions;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
@@ -1976,6 +1977,7 @@ public final class PlayerBatchService {
                 gameRules.set(GameRules.SHOW_ADVANCEMENT_MESSAGES, false, server);
             }
             try {
+                fakePlayer.setGameMode(GameType.SURVIVAL);
                 appliedConfig.loadout().applyTo(fakePlayer);
                 owner.applyCombatPreset(fakePlayer, appliedConfig.combatPreset());
             } finally {
