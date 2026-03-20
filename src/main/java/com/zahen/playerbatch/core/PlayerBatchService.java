@@ -2,7 +2,9 @@ package com.zahen.playerbatch.core;
 
 import carpet.patches.EntityPlayerMPFake;
 import com.zahen.playerbatch.PlayerBatch;
+import com.zahen.playerbatch.command.CombatPresetParser;
 import com.zahen.playerbatch.compat.CommandCompat;
+import com.zahen.playerbatch.config.CombatPresetStore;
 import com.zahen.playerbatch.config.PlayerBatchConfig;
 import com.zahen.playerbatch.item.SelectionWandItem;
 import com.zahen.playerbatch.name.NamePlanner;
@@ -11,6 +13,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -23,8 +26,12 @@ import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.alchemy.PotionContents;
+import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
@@ -105,7 +112,7 @@ public final class PlayerBatchService {
                 return;
             }
 
-            int queued = state(source.getServer()).queueBatch(source, plannedNames, new BotConfig(formation, config.loadout(), config.distributions()));
+            int queued = state(source.getServer()).queueBatch(source, plannedNames, new BotConfig(formation, config.loadout(), config.distributions(), config.combatPreset()));
             if (queued <= 0) {
                 source.sendFailure(Component.literal("No valid bot names were available to queue."));
                 return;
@@ -410,6 +417,49 @@ public final class PlayerBatchService {
         }
         source.sendSuccess(() -> Component.literal(result.message()), true);
         return result.affected();
+    }
+
+    public static int summonCombatPreset(CommandSourceStack source, int count, String rawOptions) {
+        try {
+            CombatPresetParser.validate(rawOptions);
+            CombatPresetSpec preset = CombatPresetParser.parse(rawOptions);
+            return requestSummon(source, count, "", new BotConfig("circle", preset.createLoadout(), preset));
+        } catch (IllegalArgumentException exception) {
+            source.sendFailure(Component.literal(exception.getMessage()));
+            return 0;
+        }
+    }
+
+    public static int saveCombatPreset(CommandSourceStack source, String name, int count, String rawOptions) {
+        try {
+            String validatedOptions = CombatPresetParser.validate(rawOptions);
+            CombatPresetStore.save(name, count, validatedOptions);
+            source.sendSuccess(() -> Component.literal("Saved combat preset '" + name + "'."), true);
+            return 1;
+        } catch (IllegalArgumentException exception) {
+            source.sendFailure(Component.literal(exception.getMessage()));
+            return 0;
+        }
+    }
+
+    public static int summonSavedCombatPreset(CommandSourceStack source, String name, Integer overrideCount) {
+        CombatPresetSpec.SavedCombatPreset preset = CombatPresetStore.get(name);
+        if (preset == null) {
+            source.sendFailure(Component.literal("Unknown combat preset: " + name));
+            return 0;
+        }
+        int count = overrideCount == null ? preset.count() : overrideCount;
+        return summonCombatPreset(source, count, preset.rawOptions());
+    }
+
+    public static int listCombatPresets(CommandSourceStack source) {
+        List<String> names = CombatPresetStore.names();
+        if (names.isEmpty()) {
+            source.sendFailure(Component.literal("No saved combat presets yet."));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Combat presets: " + String.join(", ", names)), false);
+        return names.size();
     }
 
     public static int setGroupAiMode(CommandSourceStack source, String rawName, String rawMode) {
@@ -1156,6 +1206,17 @@ public final class PlayerBatchService {
             return AiResult.success("Set AI mode to '" + BotAiMode.displayModes(modes) + "' for all " + players.size() + " managed bot" + suffix(players.size()) + ".", players.size());
         }
 
+        private void applyCombatPreset(EntityPlayerMPFake fakePlayer, CombatPresetSpec combatPreset) {
+            BotBrain brain = ensureBrain(fakePlayer);
+            brain.combatPreset = combatPreset;
+            brain.healCooldownTicks = 0;
+            if (combatPreset != null) {
+                brain.modes = EnumSet.of(BotAiMode.COMBAT);
+            } else if (brain.groupKey == null) {
+                brain.modes = EnumSet.of(BotAiMode.IDLE);
+            }
+        }
+
         private AiResult setGroupAiModes(String rawName, EnumSet<BotAiMode> modes) {
             BotGroup group = groups.get(normalizeGroupName(rawName));
             if (group == null) {
@@ -1306,17 +1367,39 @@ public final class PlayerBatchService {
 
         private void tickBrain(EntityPlayerMPFake fakePlayer, BotBrain brain) {
             EnumSet<BotAiMode> modes = brain.modes.isEmpty() ? EnumSet.of(BotAiMode.IDLE) : EnumSet.copyOf(brain.modes);
+            CombatPresetSpec combatPreset = brain.combatPreset;
+
+            ServerPlayer followTarget = modes.contains(BotAiMode.FOLLOW) ? findNearestPlayerTarget(fakePlayer, 24.0D) : null;
+            LivingEntity threat = (modes.contains(BotAiMode.GUARD) || modes.contains(BotAiMode.COMBAT) || modes.contains(BotAiMode.FLEE) || combatPreset != null)
+                    ? findNearestThreat(fakePlayer, 16.0D)
+                    : null;
+
+            if (combatPreset != null) {
+                manageCombatInventory(fakePlayer, combatPreset);
+                if (brain.healCooldownTicks > 0) {
+                    brain.healCooldownTicks--;
+                }
+                if (combatPreset.selfHealEnabled() && hasLowHealth(fakePlayer)) {
+                    HealingChoice healingChoice = findBestHealingChoice(fakePlayer);
+                    if (healingChoice != null) {
+                        if (threat != null) {
+                            moveAwayFromThreat(fakePlayer, threat, 0.52D);
+                        } else {
+                            dampHorizontalMotion(fakePlayer);
+                        }
+                        if (brain.healCooldownTicks <= 0 && useHealingChoice(fakePlayer, healingChoice)) {
+                            brain.healCooldownTicks = 20;
+                        }
+                        return;
+                    }
+                }
+            }
 
             if (modes.contains(BotAiMode.PATROL)) {
                 float nextYaw = fakePlayer.getYRot() + 25.0F;
                 fakePlayer.setYRot(nextYaw);
                 fakePlayer.setYHeadRot(nextYaw);
             }
-
-            ServerPlayer followTarget = modes.contains(BotAiMode.FOLLOW) ? findNearestPlayerTarget(fakePlayer, 24.0D) : null;
-            LivingEntity threat = (modes.contains(BotAiMode.GUARD) || modes.contains(BotAiMode.COMBAT) || modes.contains(BotAiMode.FLEE))
-                    ? findNearestThreat(fakePlayer, 16.0D)
-                    : null;
 
             if (modes.contains(BotAiMode.FLEE) && threat != null) {
                 Vec3 away = fakePlayer.position().subtract(threat.position()).normalize().scale(0.35D);
@@ -1413,6 +1496,161 @@ public final class PlayerBatchService {
             source.setShiftKeyDown(false);
             source.setSprinting(false);
             source.setDeltaMovement(source.getDeltaMovement().multiply(0.35D, 1.0D, 0.35D));
+        }
+
+        private void moveAwayFromThreat(EntityPlayerMPFake source, Entity threat, double speed) {
+            Vec3 away = source.position().subtract(threat.position());
+            if (away.lengthSqr() < 0.0001D) {
+                dampHorizontalMotion(source);
+                return;
+            }
+            Vec3 horizontal = new Vec3(away.x, 0.0D, away.z).normalize().scale(speed);
+            source.setShiftKeyDown(false);
+            source.setSprinting(true);
+            source.setDeltaMovement(horizontal.x, Math.max(0.0D, source.getDeltaMovement().y), horizontal.z);
+        }
+
+        private boolean hasLowHealth(EntityPlayerMPFake fakePlayer) {
+            return fakePlayer.getMaxHealth() > 0.0F && (fakePlayer.getHealth() / fakePlayer.getMaxHealth()) <= 0.45F;
+        }
+
+        private void manageCombatInventory(EntityPlayerMPFake fakePlayer, CombatPresetSpec combatPreset) {
+            ensureTotemOrShield(fakePlayer, combatPreset);
+            equipBestArmor(fakePlayer);
+            equipBestWeapon(fakePlayer);
+        }
+
+        private void ensureTotemOrShield(EntityPlayerMPFake fakePlayer, CombatPresetSpec combatPreset) {
+            if (combatPreset.offhandMode() != CombatPresetSpec.OffhandMode.TOTEM) {
+                return;
+            }
+            ItemStack offhand = fakePlayer.getOffhandItem();
+            if (offhand.is(Items.TOTEM_OF_UNDYING)) {
+                return;
+            }
+            int totemSlot = findInventoryItem(fakePlayer, Items.TOTEM_OF_UNDYING);
+            if (totemSlot >= 0) {
+                moveInventoryItemToOffhand(fakePlayer, totemSlot);
+                return;
+            }
+            if (!offhand.is(Items.SHIELD)) {
+                int shieldSlot = findInventoryItem(fakePlayer, Items.SHIELD);
+                if (shieldSlot >= 0) {
+                    moveInventoryItemToOffhand(fakePlayer, shieldSlot);
+                }
+            }
+        }
+
+        private void moveInventoryItemToOffhand(EntityPlayerMPFake fakePlayer, int inventorySlot) {
+            ItemStack fromInventory = fakePlayer.getInventory().getItem(inventorySlot);
+            if (fromInventory.isEmpty()) {
+                return;
+            }
+            ItemStack previousOffhand = fakePlayer.getOffhandItem().copy();
+            fakePlayer.setItemSlot(EquipmentSlot.OFFHAND, fromInventory.copy());
+            fakePlayer.getInventory().setItem(inventorySlot, previousOffhand);
+        }
+
+        private int findInventoryItem(EntityPlayerMPFake fakePlayer, Item item) {
+            for (int slot = 0; slot < fakePlayer.getInventory().getContainerSize(); slot++) {
+                if (fakePlayer.getInventory().getItem(slot).is(item)) {
+                    return slot;
+                }
+            }
+            return -1;
+        }
+
+        private void equipBestArmor(EntityPlayerMPFake fakePlayer) {
+            for (EquipmentSlot slot : List.of(EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET)) {
+                ArmorEvaluation current = ArmorEvaluation.forStack(fakePlayer.getItemBySlot(slot), slot);
+                int bestSlot = -1;
+                ArmorEvaluation bestCandidate = current;
+                for (int inventorySlot = 0; inventorySlot < fakePlayer.getInventory().getContainerSize(); inventorySlot++) {
+                    ArmorEvaluation candidate = ArmorEvaluation.forStack(fakePlayer.getInventory().getItem(inventorySlot), slot);
+                    if (candidate.isBetterThan(bestCandidate)) {
+                        bestCandidate = candidate;
+                        bestSlot = inventorySlot;
+                    }
+                }
+                if (bestSlot >= 0) {
+                    swapInventoryWithEquipment(fakePlayer, bestSlot, slot);
+                }
+            }
+        }
+
+        private void equipBestWeapon(EntityPlayerMPFake fakePlayer) {
+            WeaponEvaluation current = WeaponEvaluation.forStack(fakePlayer.getMainHandItem());
+            int bestSlot = -1;
+            WeaponEvaluation bestCandidate = current;
+            for (int inventorySlot = 0; inventorySlot < fakePlayer.getInventory().getContainerSize(); inventorySlot++) {
+                WeaponEvaluation candidate = WeaponEvaluation.forStack(fakePlayer.getInventory().getItem(inventorySlot));
+                if (candidate.isBetterThan(bestCandidate)) {
+                    bestCandidate = candidate;
+                    bestSlot = inventorySlot;
+                }
+            }
+            if (bestSlot >= 0) {
+                swapInventoryWithEquipment(fakePlayer, bestSlot, EquipmentSlot.MAINHAND);
+            }
+        }
+
+        private void swapInventoryWithEquipment(EntityPlayerMPFake fakePlayer, int inventorySlot, EquipmentSlot equipmentSlot) {
+            ItemStack inventoryStack = fakePlayer.getInventory().getItem(inventorySlot).copy();
+            ItemStack equippedStack = fakePlayer.getItemBySlot(equipmentSlot).copy();
+            fakePlayer.setItemSlot(equipmentSlot, inventoryStack);
+            fakePlayer.getInventory().setItem(inventorySlot, equippedStack);
+        }
+
+        private HealingChoice findBestHealingChoice(EntityPlayerMPFake fakePlayer) {
+            HealingChoice best = null;
+            for (int slot = 0; slot < fakePlayer.getInventory().getContainerSize(); slot++) {
+                HealingChoice candidate = HealingChoice.forStack(fakePlayer.getInventory().getItem(slot), slot);
+                if (candidate != null && (best == null || candidate.score() > best.score())) {
+                    best = candidate;
+                }
+            }
+            return best;
+        }
+
+        private boolean useHealingChoice(EntityPlayerMPFake fakePlayer, HealingChoice healingChoice) {
+            ItemStack stack = fakePlayer.getInventory().getItem(healingChoice.slot());
+            if (stack.isEmpty()) {
+                return false;
+            }
+            return switch (healingChoice.kind()) {
+                case FOOD -> consumeFoodHealing(fakePlayer, stack, healingChoice);
+                case POTION -> consumePotionHealing(fakePlayer, stack, healingChoice);
+            };
+        }
+
+        private boolean consumeFoodHealing(EntityPlayerMPFake fakePlayer, ItemStack stack, HealingChoice healingChoice) {
+            stack.shrink(1);
+            fakePlayer.heal(healingChoice.healAmount());
+            applySpecialFoodEffects(fakePlayer, healingChoice.itemId());
+            return true;
+        }
+
+        private boolean consumePotionHealing(EntityPlayerMPFake fakePlayer, ItemStack stack, HealingChoice healingChoice) {
+            stack.shrink(1);
+            if (healingChoice.healAmount() > 0.0F) {
+                fakePlayer.heal(healingChoice.healAmount());
+            }
+            if (healingChoice.regenerationDurationTicks() > 0) {
+                fakePlayer.addEffect(new MobEffectInstance(MobEffects.REGENERATION, healingChoice.regenerationDurationTicks(), healingChoice.regenerationAmplifier()));
+            }
+            return true;
+        }
+
+        private void applySpecialFoodEffects(EntityPlayerMPFake fakePlayer, String itemId) {
+            if (itemId.endsWith("golden_apple")) {
+                fakePlayer.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 100, 1));
+                fakePlayer.addEffect(new MobEffectInstance(MobEffects.ABSORPTION, 2400, 0));
+            } else if (itemId.endsWith("enchanted_golden_apple")) {
+                fakePlayer.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 400, 1));
+                fakePlayer.addEffect(new MobEffectInstance(MobEffects.ABSORPTION, 2400, 3));
+                fakePlayer.addEffect(new MobEffectInstance(MobEffects.RESISTANCE, 6000, 0));
+                fakePlayer.addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 6000, 0));
+            }
         }
 
         private void tryAttackTarget(EntityPlayerMPFake source, LivingEntity target) {
@@ -1610,6 +1848,7 @@ public final class PlayerBatchService {
             }
             try {
                 appliedConfig.loadout().applyTo(fakePlayer);
+                owner.applyCombatPreset(fakePlayer, appliedConfig.combatPreset());
             } finally {
                 if (previous) {
                     gameRules.set(GameRules.SHOW_ADVANCEMENT_MESSAGES, true, server);
@@ -1618,7 +1857,7 @@ public final class PlayerBatchService {
         }
 
         private BotConfig baseConfig() {
-            return new BotConfig(config.formation(), config.loadout());
+            return new BotConfig(config.formation(), config.loadout(), config.combatPreset());
         }
 
         private Map<String, BotConfig> buildPlannedConfigs(List<String> names, BotConfig batchConfig) {
@@ -1647,7 +1886,8 @@ public final class PlayerBatchService {
                 int ruleCount = counts.get(index);
                 BotConfig distributedConfig = new BotConfig(
                         batchConfig.formation(),
-                        batchConfig.loadout().mergedWith(rule.loadout())
+                        batchConfig.loadout().mergedWith(rule.loadout()),
+                        batchConfig.combatPreset()
                 );
                 for (int assigned = 0; assigned < ruleCount && cursor < allocationOrder.size(); assigned++, cursor++) {
                     result.put(allocationOrder.get(cursor), distributedConfig);
@@ -1952,6 +2192,57 @@ public final class PlayerBatchService {
         return "PB" + Math.abs(baseName.hashCode() % 1_000_000);
     }
 
+    private static boolean matchesArmorSlot(String itemId, EquipmentSlot slot) {
+        return switch (slot) {
+            case HEAD -> itemId.endsWith("_helmet");
+            case CHEST -> itemId.endsWith("_chestplate");
+            case LEGS -> itemId.endsWith("_leggings");
+            case FEET -> itemId.endsWith("_boots");
+            default -> false;
+        };
+    }
+
+    private static int armorMaterialScore(String itemId) {
+        if (itemId.contains("netherite")) {
+            return 5;
+        }
+        if (itemId.contains("diamond")) {
+            return 4;
+        }
+        if (itemId.contains("golden")) {
+            return 3;
+        }
+        if (itemId.contains("iron")) {
+            return 2;
+        }
+        if (itemId.contains("leather")) {
+            return 1;
+        }
+        return -1;
+    }
+
+    private static int toolMaterialScore(String itemId) {
+        if (itemId.contains("netherite")) {
+            return 6;
+        }
+        if (itemId.contains("diamond")) {
+            return 5;
+        }
+        if (itemId.contains("golden")) {
+            return 4;
+        }
+        if (itemId.contains("iron")) {
+            return 3;
+        }
+        if (itemId.contains("stone")) {
+            return 2;
+        }
+        if (itemId.contains("wooden")) {
+            return 1;
+        }
+        return -1;
+    }
+
     private static String suffix(int count) {
         return count == 1 ? "" : "s";
     }
@@ -2001,6 +2292,92 @@ public final class PlayerBatchService {
     private static final class BotBrain {
         private EnumSet<BotAiMode> modes = EnumSet.of(BotAiMode.IDLE);
         private String groupKey;
+        private CombatPresetSpec combatPreset;
+        private int healCooldownTicks;
+    }
+
+    private record ArmorEvaluation(int materialScore, boolean enchanted, ItemStack stack) {
+        private static ArmorEvaluation forStack(ItemStack stack, EquipmentSlot targetSlot) {
+            if (stack == null || stack.isEmpty()) {
+                return new ArmorEvaluation(-1, false, ItemStack.EMPTY);
+            }
+            String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+            if (!matchesArmorSlot(itemId, targetSlot)) {
+                return new ArmorEvaluation(-1, false, stack);
+            }
+            return new ArmorEvaluation(armorMaterialScore(itemId), stack.isEnchanted(), stack);
+        }
+
+        private boolean isBetterThan(ArmorEvaluation other) {
+            if (materialScore != other.materialScore) {
+                return materialScore > other.materialScore;
+            }
+            return materialScore >= 0 && enchanted && !other.enchanted;
+        }
+    }
+
+    private record WeaponEvaluation(int materialScore, int typeScore, boolean enchanted, ItemStack stack) {
+        private static WeaponEvaluation forStack(ItemStack stack) {
+            if (stack == null || stack.isEmpty()) {
+                return new WeaponEvaluation(-1, -1, false, ItemStack.EMPTY);
+            }
+            String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+            int typeScore = itemId.endsWith("_sword") ? 2 : itemId.endsWith("_axe") ? 1 : -1;
+            if (typeScore < 0) {
+                return new WeaponEvaluation(-1, -1, false, stack);
+            }
+            return new WeaponEvaluation(toolMaterialScore(itemId), typeScore, stack.isEnchanted(), stack);
+        }
+
+        private boolean isBetterThan(WeaponEvaluation other) {
+            if (materialScore != other.materialScore) {
+                return materialScore > other.materialScore;
+            }
+            if (materialScore >= 0 && enchanted != other.enchanted) {
+                return enchanted;
+            }
+            return typeScore > other.typeScore;
+        }
+    }
+
+    private record HealingChoice(int slot, Kind kind, float score, float healAmount, int regenerationDurationTicks, int regenerationAmplifier, String itemId) {
+        private static HealingChoice forStack(ItemStack stack, int slot) {
+            if (stack == null || stack.isEmpty()) {
+                return null;
+            }
+            PotionContents potionContents = stack.get(DataComponents.POTION_CONTENTS);
+            if (potionContents != null && potionContents.potion().isPresent()) {
+                String potionId = BuiltInRegistries.POTION.getKey(potionContents.potion().get().value()).toString();
+                if (potionId.contains("healing")) {
+                    float healAmount = potionId.contains("strong_") ? 8.0F : 4.0F;
+                    return new HealingChoice(slot, Kind.POTION, healAmount * 3.0F, healAmount, 0, 0, potionId);
+                }
+                if (potionId.contains("regeneration")) {
+                    int duration = potionId.contains("long_") ? 1800 : 900;
+                    int amplifier = potionId.contains("strong_") ? 1 : 0;
+                    float score = potionId.contains("strong_") ? 10.0F : potionId.contains("long_") ? 9.0F : 8.0F;
+                    return new HealingChoice(slot, Kind.POTION, score, 0.0F, duration, amplifier, potionId);
+                }
+            }
+
+            FoodProperties foodProperties = stack.get(DataComponents.FOOD);
+            if (foodProperties != null) {
+                String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+                float baseHeal = foodProperties.nutrition();
+                if (stack.is(Items.ENCHANTED_GOLDEN_APPLE)) {
+                    baseHeal += 20.0F;
+                } else if (stack.is(Items.GOLDEN_APPLE)) {
+                    baseHeal += 8.0F;
+                }
+                return new HealingChoice(slot, Kind.FOOD, baseHeal, Math.max(2.0F, baseHeal), 0, 0, itemId);
+            }
+            return null;
+        }
+
+        private enum Kind {
+            FOOD,
+            POTION
+        }
     }
 
     public static void cleanupManagedBot(Entity entity) {

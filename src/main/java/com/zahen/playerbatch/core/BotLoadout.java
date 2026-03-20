@@ -2,12 +2,16 @@ package com.zahen.playerbatch.core;
 
 import carpet.patches.EntityPlayerMPFake;
 import net.minecraft.core.Holder;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.alchemy.PotionContents;
+import net.minecraft.world.item.alchemy.Potions;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -145,21 +149,21 @@ public final class BotLoadout {
 
     public void applyTo(EntityPlayerMPFake fakePlayer) {
         for (Map.Entry<EquipmentSlot, StackSpec> entry : equipment.entrySet()) {
-            Item item = resolveItem(entry.getValue().itemId());
-            if (item != null) {
-                fakePlayer.setItemSlot(entry.getKey(), new ItemStack(item, Math.max(1, entry.getValue().count())));
+            ItemStack stack = createStack(entry.getValue());
+            if (!stack.isEmpty()) {
+                fakePlayer.setItemSlot(entry.getKey(), stack);
             }
         }
         for (Map.Entry<Integer, StackSpec> entry : hotbar.entrySet()) {
-            Item item = resolveItem(entry.getValue().itemId());
-            if (item != null && entry.getKey() >= 0 && entry.getKey() < fakePlayer.getInventory().getContainerSize()) {
-                fakePlayer.getInventory().setItem(entry.getKey(), new ItemStack(item, Math.max(1, entry.getValue().count())));
+            ItemStack stack = createStack(entry.getValue());
+            if (!stack.isEmpty() && entry.getKey() >= 0 && entry.getKey() < fakePlayer.getInventory().getContainerSize()) {
+                fakePlayer.getInventory().setItem(entry.getKey(), stack);
             }
         }
         for (Map.Entry<Integer, StackSpec> entry : inventory.entrySet()) {
-            Item item = resolveItem(entry.getValue().itemId());
-            if (item != null && entry.getKey() >= 9 && entry.getKey() < fakePlayer.getInventory().getContainerSize()) {
-                fakePlayer.getInventory().setItem(entry.getKey(), new ItemStack(item, Math.max(1, entry.getValue().count())));
+            ItemStack stack = createStack(entry.getValue());
+            if (!stack.isEmpty() && entry.getKey() >= 9 && entry.getKey() < fakePlayer.getInventory().getContainerSize()) {
+                fakePlayer.getInventory().setItem(entry.getKey(), stack);
             }
         }
         for (EffectSpec effectSpec : effects) {
@@ -193,6 +197,32 @@ public final class BotLoadout {
                 .flatMap(BuiltInRegistries.MOB_EFFECT::get)
                 .map(holder -> (Holder<MobEffect>) holder)
                 .orElse(null);
+    }
+
+    private static ItemStack createStack(StackSpec spec) {
+        if (spec == null || spec.itemId() == null || spec.itemId().isBlank()) {
+            return ItemStack.EMPTY;
+        }
+        String itemId = spec.itemId();
+        int count = Math.max(1, spec.count());
+        return switch (itemId) {
+            case "minecraft:potion_of_healing" -> potionStack(Items.POTION, Potions.HEALING, count);
+            case "minecraft:splash_potion_of_healing" -> potionStack(Items.SPLASH_POTION, Potions.HEALING, count);
+            case "minecraft:lingering_potion_of_healing" -> potionStack(Items.LINGERING_POTION, Potions.HEALING, count);
+            case "minecraft:potion_of_regeneration" -> potionStack(Items.POTION, Potions.REGENERATION, count);
+            case "minecraft:splash_potion_of_regeneration" -> potionStack(Items.SPLASH_POTION, Potions.REGENERATION, count);
+            case "minecraft:lingering_potion_of_regeneration" -> potionStack(Items.LINGERING_POTION, Potions.REGENERATION, count);
+            default -> {
+                Item item = resolveItem(itemId);
+                yield item == null ? ItemStack.EMPTY : new ItemStack(item, count);
+            }
+        };
+    }
+
+    private static ItemStack potionStack(Item item, Holder<net.minecraft.world.item.alchemy.Potion> potion, int count) {
+        ItemStack stack = new ItemStack(item, count);
+        stack.set(DataComponents.POTION_CONTENTS, new PotionContents(potion));
+        return stack;
     }
 
     public record StackSpec(String itemId, int count) {

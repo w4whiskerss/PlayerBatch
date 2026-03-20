@@ -5,6 +5,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
+import com.zahen.playerbatch.config.CombatPresetStore;
 import com.zahen.playerbatch.core.BotAiMode;
 import com.zahen.playerbatch.core.PlayerBatchService;
 import net.minecraft.commands.CommandSourceStack;
@@ -248,6 +249,49 @@ public final class PlayerBatchCommand {
                                                 ))))))
                 .then(Commands.literal("summon")
                         .then(summonArguments()))
+                .then(Commands.literal("preset")
+                        .then(Commands.literal("combat")
+                                .then(Commands.argument("count", IntegerArgumentType.integer(1))
+                                        .executes(context -> PlayerBatchService.summonCombatPreset(
+                                                context.getSource(),
+                                                IntegerArgumentType.getInteger(context, "count"),
+                                                ""
+                                        ))
+                                        .then(Commands.argument("options", StringArgumentType.greedyString())
+                                                .suggests((context, builder) -> SharedSuggestionProvider.suggest(CombatPresetParser.suggestOptions(builder.getRemainingLowerCase()), builder))
+                                                .executes(context -> PlayerBatchService.summonCombatPreset(
+                                                        context.getSource(),
+                                                        IntegerArgumentType.getInteger(context, "count"),
+                                                        StringArgumentType.getString(context, "options")
+                                                )))))
+                        .then(Commands.literal("save")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .then(Commands.literal("combat")
+                                                .then(Commands.argument("count", IntegerArgumentType.integer(1))
+                                                        .then(Commands.argument("options", StringArgumentType.greedyString())
+                                                                .suggests((context, builder) -> SharedSuggestionProvider.suggest(CombatPresetParser.suggestOptions(builder.getRemainingLowerCase()), builder))
+                                                                .executes(context -> PlayerBatchService.saveCombatPreset(
+                                                                        context.getSource(),
+                                                                        StringArgumentType.getString(context, "name"),
+                                                                        IntegerArgumentType.getInteger(context, "count"),
+                                                                        StringArgumentType.getString(context, "options")
+                                                                )))))))
+                        .then(Commands.literal("summon")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(CombatPresetStore.names(), builder))
+                                        .executes(context -> PlayerBatchService.summonSavedCombatPreset(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "name"),
+                                                null
+                                        ))
+                                        .then(Commands.argument("count", IntegerArgumentType.integer(1))
+                                                .executes(context -> PlayerBatchService.summonSavedCombatPreset(
+                                                        context.getSource(),
+                                                        StringArgumentType.getString(context, "name"),
+                                                        IntegerArgumentType.getInteger(context, "count")
+                                                )))))
+                        .then(Commands.literal("list")
+                                .executes(context -> PlayerBatchService.listCombatPresets(context.getSource()))))
                 .then(Commands.literal("help")
                         .executes(context -> {
                             context.getSource().sendSuccess(

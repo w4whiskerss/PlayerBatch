@@ -13,15 +13,25 @@ public final class BotConfig {
     private final String formation;
     private final BotLoadout loadout;
     private final List<DistributionRule> distributions;
+    private final CombatPresetSpec combatPreset;
 
     public BotConfig(String formation, BotLoadout loadout) {
-        this(formation, loadout, List.of());
+        this(formation, loadout, List.of(), null);
     }
 
     public BotConfig(String formation, BotLoadout loadout, List<DistributionRule> distributions) {
+        this(formation, loadout, distributions, null);
+    }
+
+    public BotConfig(String formation, BotLoadout loadout, CombatPresetSpec combatPreset) {
+        this(formation, loadout, List.of(), combatPreset);
+    }
+
+    public BotConfig(String formation, BotLoadout loadout, List<DistributionRule> distributions, CombatPresetSpec combatPreset) {
         this.formation = formation == null || formation.isBlank() ? "circle" : formation;
         this.loadout = loadout == null ? new BotLoadout() : loadout;
         this.distributions = distributions == null ? List.of() : List.copyOf(distributions);
+        this.combatPreset = combatPreset;
     }
 
     public String formation() {
@@ -34,6 +44,10 @@ public final class BotConfig {
 
     public List<DistributionRule> distributions() {
         return distributions;
+    }
+
+    public CombatPresetSpec combatPreset() {
+        return combatPreset;
     }
 
     public String encode() {
