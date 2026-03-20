@@ -47,6 +47,7 @@ import java.util.concurrent.ConcurrentMap;
 public final class PlayerBatchService {
     private static final String BOT_TAG = "bot";
     private static final int AI_TICK_INTERVAL = 10;
+    private static final String DEFAULT_FORMATION = "circle";
     private static final ConcurrentMap<MinecraftServer, ServerState> SERVER_STATES = new ConcurrentHashMap<>();
     private static final MobEffectInstance SELECTED_GLOWING = new MobEffectInstance(MobEffects.GLOWING, Integer.MAX_VALUE, 0, false, false);
 
@@ -54,7 +55,17 @@ public final class PlayerBatchService {
     }
 
     public static int requestSummon(CommandSourceStack source, int count, String rawNames) {
+        return requestSummon(source, count, rawNames, DEFAULT_FORMATION);
+    }
+
+    public static int requestSummon(CommandSourceStack source, int count, String rawNames, String rawFormation) {
         if (source.getServer() == null) {
+            return 0;
+        }
+
+        String formation = normalizeFormation(rawFormation);
+        if (formation == null) {
+            source.sendFailure(Component.literal("Unknown formation. Use: circle, square, triangle, random, single block."));
             return 0;
         }
 
@@ -84,7 +95,7 @@ public final class PlayerBatchService {
                 return;
             }
 
-            int queued = state(source.getServer()).queueBatch(source, plannedNames);
+            int queued = state(source.getServer()).queueBatch(source, plannedNames, formation);
             if (queued <= 0) {
                 source.sendFailure(Component.literal("No valid bot names were available to queue."));
                 return;
@@ -339,8 +350,8 @@ public final class PlayerBatchService {
         setDebug(player.createCommandSourceStack(), enabled);
     }
 
-    public static void requestSummonFromGui(ServerPlayer player, int count, String rawNames) {
-        requestSummon(player.createCommandSourceStack(), count, rawNames);
+    public static void requestSummonFromGui(ServerPlayer player, int count, String rawNames, String formation) {
+        requestSummon(player.createCommandSourceStack(), count, rawNames, formation);
     }
 
     public static void runSelectedActionFromGui(ServerPlayer player, String action) {
@@ -518,12 +529,12 @@ public final class PlayerBatchService {
             this.server = server;
         }
 
-        private int queueBatch(CommandSourceStack source, List<String> names) {
+        private int queueBatch(CommandSourceStack source, List<String> names, String formation) {
             if (names.isEmpty()) {
                 return 0;
             }
-            queue.addLast(new SummonBatch(server, source, names));
-            debug("Queued summon batch with {} names", names.size());
+            queue.addLast(new SummonBatch(server, source, names, formation));
+            debug("Queued summon batch with {} names using {} formation", names.size(), formation);
             broadcast(false);
             return names.size();
         }
@@ -993,16 +1004,18 @@ public final class PlayerBatchService {
         private final CommandSourceStack executionSource;
         private final Deque<SummonEntry> remainingEntries;
         private final int totalCount;
+        private final String formation;
         private final ServerBossEvent bossBar;
         private boolean started;
         private int successCount;
         private int failCount;
 
-        private SummonBatch(MinecraftServer server, CommandSourceStack source, List<String> names) {
+        private SummonBatch(MinecraftServer server, CommandSourceStack source, List<String> names, String formation) {
             this.server = server;
             this.feedbackSource = source;
             this.executionSource = source.withSuppressedOutput();
-            this.remainingEntries = new ArrayDeque<>(buildCircleEntries(source, names));
+            this.formation = formation;
+            this.remainingEntries = new ArrayDeque<>(buildFormationEntries(source, names, formation));
             this.totalCount = names.size();
             this.bossBar = new ServerBossEvent(
                     Component.literal("Summoning Bots..."),
@@ -1043,7 +1056,7 @@ public final class PlayerBatchService {
                     if (spawnedPlayer != null) {
                         spawnedPlayer.addTag(BOT_TAG);
                     }
-                    debug("Spawn accepted for {}", nextName);
+                    debug("Spawn accepted for {} in {} formation", nextName, formation);
                 } else {
                     failCount++;
                     PlayerBatch.LOGGER.warn("Spawn rejected for fake player {}", nextName);
@@ -1088,6 +1101,21 @@ public final class PlayerBatchService {
             }
         }
 
+        private List<SummonEntry> buildFormationEntries(CommandSourceStack source, List<String> names, String formation) {
+            String normalizedFormation = normalizeFormation(formation);
+            if (normalizedFormation == null) {
+                return buildCircleEntries(source, names);
+            }
+            return switch (normalizedFormation) {
+                case "square" -> buildSquareEntries(source, names);
+                case "triangle" -> buildTriangleEntries(source, names);
+                case "random" -> buildRandomEntries(source, names);
+                case "single block" -> buildSingleBlockEntries(source, names);
+                case "circle" -> buildCircleEntries(source, names);
+                default -> buildCircleEntries(source, names);
+            };
+        }
+
         private List<SummonEntry> buildCircleEntries(CommandSourceStack source, List<String> names) {
             List<SummonEntry> entries = new ArrayList<>(names.size());
             Vec3 center = source.getPosition();
@@ -1105,6 +1133,81 @@ public final class PlayerBatchService {
                 entries.add(new SummonEntry(names.get(index), command));
             }
             return entries;
+        }
+
+        private List<SummonEntry> buildSquareEntries(CommandSourceStack source, List<String> names) {
+            List<SummonEntry> entries = new ArrayList<>(names.size());
+            Vec3 center = source.getPosition();
+            ServerLevel level = source.getLevel();
+            int sideLength = Math.max(1, (int) Math.ceil(Math.sqrt(names.size())));
+            double spacing = 2.0D;
+            double originX = center.x - ((sideLength - 1) * spacing) / 2.0D;
+            double originZ = center.z - ((sideLength - 1) * spacing) / 2.0D;
+            for (int index = 0; index < names.size(); index++) {
+                int row = index / sideLength;
+                int column = index % sideLength;
+                double x = originX + (column * spacing);
+                double z = originZ + (row * spacing);
+                entries.add(buildEntry(level, center, names.get(index), x, z));
+            }
+            return entries;
+        }
+
+        private List<SummonEntry> buildTriangleEntries(CommandSourceStack source, List<String> names) {
+            List<SummonEntry> entries = new ArrayList<>(names.size());
+            Vec3 center = source.getPosition();
+            ServerLevel level = source.getLevel();
+            double spacing = 2.0D;
+            int placed = 0;
+            for (int row = 0; placed < names.size(); row++) {
+                int rowCount = row + 1;
+                double z = center.z + (row * spacing) - (spacing * Math.max(0, names.size() / 6.0D));
+                double startX = center.x - ((rowCount - 1) * spacing) / 2.0D;
+                for (int column = 0; column < rowCount && placed < names.size(); column++) {
+                    double x = startX + (column * spacing);
+                    entries.add(buildEntry(level, center, names.get(placed), x, z));
+                    placed++;
+                }
+            }
+            return entries;
+        }
+
+        private List<SummonEntry> buildRandomEntries(CommandSourceStack source, List<String> names) {
+            List<SummonEntry> entries = new ArrayList<>(names.size());
+            Vec3 center = source.getPosition();
+            ServerLevel level = source.getLevel();
+            double radius = Math.max(2.5D, Math.sqrt(names.size()) * 1.8D);
+            for (int index = 0; index < names.size(); index++) {
+                double angle = (Math.PI * 2.0D * index) / Math.max(1, names.size());
+                double distance = ((index * 1103515245L + 12345L) & 0x7fffffffL) / (double) Integer.MAX_VALUE;
+                double spread = 0.35D + (distance * 0.65D);
+                double x = center.x + Math.cos(angle * 1.7D) * radius * spread;
+                double z = center.z + Math.sin(angle * 1.3D) * radius * spread;
+                entries.add(buildEntry(level, center, names.get(index), x, z));
+            }
+            return entries;
+        }
+
+        private List<SummonEntry> buildSingleBlockEntries(CommandSourceStack source, List<String> names) {
+            List<SummonEntry> entries = new ArrayList<>(names.size());
+            Vec3 center = source.getPosition();
+            ServerLevel level = source.getLevel();
+            int blockX = BlockPos.containing(center).getX();
+            int blockZ = BlockPos.containing(center).getZ();
+            int topY = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockX, blockZ);
+            for (String name : names) {
+                String command = String.format(Locale.ROOT, "player %s spawn at %.3f %.3f %.3f", name, blockX + 0.5D, (double) topY, blockZ + 0.5D);
+                entries.add(new SummonEntry(name, command));
+            }
+            return entries;
+        }
+
+        private SummonEntry buildEntry(ServerLevel level, Vec3 center, String name, double x, double z) {
+            int blockX = BlockPos.containing(x, center.y, z).getX();
+            int blockZ = BlockPos.containing(x, center.y, z).getZ();
+            int topY = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockX, blockZ);
+            String command = String.format(Locale.ROOT, "player %s spawn at %.3f %.3f %.3f", name, x, (double) topY, z);
+            return new SummonEntry(name, command);
         }
 
         private record SummonEntry(String name, String command) {
@@ -1210,6 +1313,18 @@ public final class PlayerBatchService {
             return null;
         }
         return trimmed.toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizeFormation(String rawFormation) {
+        if (rawFormation == null || rawFormation.isBlank()) {
+            return DEFAULT_FORMATION;
+        }
+        String normalized = rawFormation.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "circle", "square", "triangle", "random", "single block" -> normalized;
+            case "single_block", "singleblock" -> "single block";
+            default -> null;
+        };
     }
 
     private static String suffix(int count) {

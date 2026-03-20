@@ -42,7 +42,7 @@ public final class PlayerBatchNetworking {
             case SET_LIMIT -> PlayerBatchService.applyLimitFromGui(player, payload.number());
             case SET_SPAWNS_PER_TICK -> PlayerBatchService.applySpawnsPerTickFromGui(player, payload.number());
             case SET_DEBUG -> PlayerBatchService.applyDebugFromGui(player, payload.flag());
-            case SUMMON -> PlayerBatchService.requestSummonFromGui(player, payload.number(), payload.text());
+            case SUMMON -> PlayerBatchService.requestSummonFromGui(player, payload.number(), payload.text(), payload.detail());
             case RUN_ACTION -> PlayerBatchService.runSelectedActionFromGui(player, payload.text());
             case TELEPORT_SELECTION -> PlayerBatchService.teleportSelectionFromGui(player, payload.text(), payload.detail());
             case CLEAR_SELECTION -> PlayerBatchService.clearSelectionFromGui(player);

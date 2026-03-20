@@ -113,7 +113,7 @@ public class PlayerBatchScreen extends Screen {
         register(addRenderableWidget(Button.builder(Component.literal("Summon Batch"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SUMMON,
                 namesBox.getValue(),
-                "",
+                currentFormation(),
                 parseInt(countBox.getValue(), 1),
                 false
         ))).bounds(left + 128, top + 114, 110, 20).build()), summoningWidgets);
