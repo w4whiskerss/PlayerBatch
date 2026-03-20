@@ -452,10 +452,12 @@ public class PlayerBatchScreen extends Screen {
             return;
         }
         if (activeSummonPane == SummonPane.LOADOUT) {
-            guiGraphics.drawString(font, "Loadout pane: armor, hands, hotbar row, and summon-time effects.", left, top + 68, 0xC3CED7);
-            guiGraphics.drawString(font, "These settings are packed into BotConfig and applied as each bot resolves.", left, top + 84, 0x9BE5B8);
-            guiGraphics.drawString(font, "Hotbar format: comma-separated items for slots 1-9.", left, top + 100, 0x9BE5B8);
-            guiGraphics.drawString(font, "Example: stone_sword,bow,bread", left, top + 116, 0xA8E8D2);
+            guiGraphics.drawString(font, "Armor", left, top + 38, 0xEBDCA9);
+            guiGraphics.drawString(font, "Hands", left, top + 68, 0xEBDCA9);
+            guiGraphics.drawString(font, "Hotbar Override", left, top + 104, 0xEBDCA9);
+            guiGraphics.drawString(font, "Potion Effect", left, top + 146, 0xEBDCA9);
+            guiGraphics.drawString(font, "Loadout entries apply during summon, not as a later post-spawn pass.", left, top + 188, 0x9BE5B8);
+            guiGraphics.drawString(font, "Hotbar uses slot 1-9 order: sword,bow,bread,shield", left, top + 204, 0xA8E8D2);
             return;
         }
         guiGraphics.drawString(font, "Distribution pane: split the batch into pre-spawn gear variants.", left, top + 38, 0xC3CED7);
@@ -554,22 +556,32 @@ public class PlayerBatchScreen extends Screen {
 
     private void initSummonLoadoutFields() {
         bindSummonItemBox(summonHeadBox, preferences.summonHead());
+        summonHeadBox.setHint(Component.literal("diamond_helmet"));
         bindSummonItemBox(summonChestBox, preferences.summonChest());
+        summonChestBox.setHint(Component.literal("diamond_chestplate"));
         bindSummonItemBox(summonLegsBox, preferences.summonLegs());
+        summonLegsBox.setHint(Component.literal("diamond_leggings"));
         bindSummonItemBox(summonFeetBox, preferences.summonFeet());
+        summonFeetBox.setHint(Component.literal("diamond_boots"));
         bindSummonItemBox(summonMainhandBox, preferences.summonMainhand());
+        summonMainhandBox.setHint(Component.literal("diamond_sword"));
         bindSummonItemBox(summonOffhandBox, preferences.summonOffhand());
+        summonOffhandBox.setHint(Component.literal("shield"));
         summonHotbarBox.setValue(preferences.summonHotbar());
+        summonHotbarBox.setHint(Component.literal("slot1,slot2,slot3..."));
         summonHotbarBox.setResponder(value -> savePreferences());
         summonEffectBox.setValue(preferences.summonEffectId());
+        summonEffectBox.setHint(Component.literal("speed"));
         summonEffectBox.setResponder(value -> {
             updateAutocomplete(summonEffectBox, EFFECT_OPTIONS);
             savePreferences();
         });
         updateAutocomplete(summonEffectBox, EFFECT_OPTIONS);
         summonEffectDurationBox.setValue(preferences.summonEffectDuration());
+        summonEffectDurationBox.setHint(Component.literal("30"));
         summonEffectDurationBox.setResponder(value -> savePreferences());
         summonEffectAmplifierBox.setValue(preferences.summonEffectAmplifier());
+        summonEffectAmplifierBox.setHint(Component.literal("0"));
         summonEffectAmplifierBox.setResponder(value -> savePreferences());
     }
 
