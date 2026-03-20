@@ -1180,7 +1180,7 @@ public final class PlayerBatchService {
             if (modes.contains(BotAiMode.COMBAT) && threat != null) {
                 lookAtTarget(fakePlayer, threat);
                 if (fakePlayer.distanceToSqr(threat) > 9.0D) {
-                    moveTowardTarget(fakePlayer, threat, 2.2D, 0.34D);
+                    moveTowardTarget(fakePlayer, threat, 2.2D, 0.48D);
                 } else {
                     dampHorizontalMotion(fakePlayer);
                     fakePlayer.swing(fakePlayer.getUsedItemHand(), true);
@@ -1191,7 +1191,7 @@ public final class PlayerBatchService {
 
             if (modes.contains(BotAiMode.FOLLOW) && followTarget != null) {
                 lookAtTarget(fakePlayer, followTarget);
-                moveTowardTarget(fakePlayer, followTarget, 2.5D, 0.32D);
+                moveTowardTarget(fakePlayer, followTarget, 2.5D, 0.44D);
                 return;
             }
 
@@ -1259,7 +1259,7 @@ public final class PlayerBatchService {
             boolean shouldJump = shouldJumpTowardTarget(source, target, motion);
             boolean shouldSneak = shouldSneakTowardTarget(source, motion);
             source.setShiftKeyDown(shouldSneak);
-            source.setSprinting(distance > preferredDistance + 4.0D && !shouldSneak);
+            source.setSprinting(distance > preferredDistance + 2.5D && !shouldSneak);
             source.setDeltaMovement(motion.x, shouldJump ? 0.42D : Math.max(0.0D, source.getDeltaMovement().y), motion.z);
         }
 
