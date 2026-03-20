@@ -22,8 +22,7 @@ import java.util.Locale;
 import java.util.Set;
 
 public final class PlayerBatchScreen extends Screen {
-    private static final int PANEL_WIDTH = 600;
-    private static final int PANEL_HEIGHT = 520;
+    private static final int PANEL_MARGIN = 12;
     private static final List<String> FORMATIONS = List.of("circle", "square", "triangle", "random", "single block");
 
     private final Screen parent;
@@ -81,7 +80,7 @@ public final class PlayerBatchScreen extends Screen {
     private void addPageButtons() {
         int left = panelLeft() + 18;
         int top = panelTop() + 16;
-        int width = 180;
+        int width = (panelWidth() - 52) / 3;
         int gap = 8;
         int index = 0;
         for (Page page : Page.values()) {
@@ -94,7 +93,7 @@ public final class PlayerBatchScreen extends Screen {
 
     private void addFooterButtons() {
         int left = panelLeft() + 18;
-        int y = panelTop() + PANEL_HEIGHT - 30;
+        int y = panelTop() + panelHeight() - 30;
         addRenderableWidget(Button.builder(Component.literal("Close"), button -> onClose())
                 .bounds(left, y, 80, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Refresh"), button -> requestState(false))
@@ -104,47 +103,58 @@ public final class PlayerBatchScreen extends Screen {
     private void initBotSummoningPage() {
         int left = panelLeft() + 18;
         int top = panelTop() + 58;
+        int countWidth = 76;
+        int namesLeft = left + 94;
+        int namesWidth = panelWidth() - 36 - countWidth - 18;
+        int equipmentWidth = (panelWidth() - 36 - 18 * 3) / 4;
+        int rightSmallWidth = 62;
+        int effectWidth = panelWidth() - 36 - ((equipmentWidth + 8) * 2) - ((rightSmallWidth + 8) * 2);
+        int fullRowWidth = panelWidth() - 36;
+        int distributionPercentWidth = 54;
+        int distributionArmorWidth = 160;
+        int distributionWeaponWidth = 160;
+        int distributionGroupTwoArmorWidth = fullRowWidth - (distributionPercentWidth + distributionArmorWidth + distributionWeaponWidth + distributionPercentWidth + (8 * 4));
 
-        countBox = addBox(left, top + 52, 76, preferences.summonCount(), this::refreshSummonState);
-        namesBox = addBox(left + 94, top + 52, 458, preferences.summonNames(), value -> {
+        countBox = addBox(left, top + 52, countWidth, preferences.summonCount(), this::refreshSummonState);
+        namesBox = addBox(namesLeft, top + 52, namesWidth, preferences.summonNames(), value -> {
             autoGrowCount();
             refreshSummonState(value);
         });
 
-        headBox = addBox(left, top + 168, 132, preferences.summonHead(), value -> saveDraft());
-        chestBox = addBox(left + 140, top + 168, 132, preferences.summonChest(), value -> saveDraft());
-        legsBox = addBox(left + 280, top + 168, 132, preferences.summonLegs(), value -> saveDraft());
-        feetBox = addBox(left + 420, top + 168, 132, preferences.summonFeet(), value -> saveDraft());
+        headBox = addBox(left, top + 168, equipmentWidth, preferences.summonHead(), value -> saveDraft());
+        chestBox = addBox(left + equipmentWidth + 8, top + 168, equipmentWidth, preferences.summonChest(), value -> saveDraft());
+        legsBox = addBox(left + (equipmentWidth + 8) * 2, top + 168, equipmentWidth, preferences.summonLegs(), value -> saveDraft());
+        feetBox = addBox(left + (equipmentWidth + 8) * 3, top + 168, equipmentWidth, preferences.summonFeet(), value -> saveDraft());
 
-        mainhandBox = addBox(left, top + 216, 132, preferences.summonMainhand(), value -> saveDraft());
-        offhandBox = addBox(left + 140, top + 216, 132, preferences.summonOffhand(), value -> saveDraft());
-        effectIdBox = addBox(left + 280, top + 216, 132, preferences.summonEffectId(), value -> saveDraft());
-        effectDurationBox = addBox(left + 420, top + 216, 62, preferences.summonEffectDuration(), value -> saveDraft());
-        effectAmplifierBox = addBox(left + 490, top + 216, 62, preferences.summonEffectAmplifier(), value -> saveDraft());
+        mainhandBox = addBox(left, top + 216, equipmentWidth, preferences.summonMainhand(), value -> saveDraft());
+        offhandBox = addBox(left + equipmentWidth + 8, top + 216, equipmentWidth, preferences.summonOffhand(), value -> saveDraft());
+        effectIdBox = addBox(left + (equipmentWidth + 8) * 2, top + 216, effectWidth, preferences.summonEffectId(), value -> saveDraft());
+        effectDurationBox = addBox(left + (equipmentWidth + 8) * 2 + effectWidth + 8, top + 216, rightSmallWidth, preferences.summonEffectDuration(), value -> saveDraft());
+        effectAmplifierBox = addBox(left + (equipmentWidth + 8) * 2 + effectWidth + 8 + rightSmallWidth + 8, top + 216, rightSmallWidth, preferences.summonEffectAmplifier(), value -> saveDraft());
 
-        hotbarBox = addBox(left, top + 268, 552, preferences.summonHotbar(), value -> saveDraft());
-        inventoryBox = addBox(left, top + 320, 552, preferences.summonInventory(), value -> saveDraft());
+        hotbarBox = addBox(left, top + 268, fullRowWidth, preferences.summonHotbar(), value -> saveDraft());
+        inventoryBox = addBox(left, top + 320, fullRowWidth, preferences.summonInventory(), value -> saveDraft());
 
-        distributionOnePercentBox = addBox(left, top + 404, 54, preferences.distributionOnePercent(), value -> saveDraft());
-        distributionOneArmorBox = addBox(left + 62, top + 404, 160, preferences.distributionOneArmor(), value -> saveDraft());
-        distributionOneWeaponBox = addBox(left + 230, top + 404, 160, preferences.distributionOneWeapon(), value -> saveDraft());
-        distributionTwoPercentBox = addBox(left + 408, top + 404, 54, preferences.distributionTwoPercent(), value -> saveDraft());
-        distributionTwoArmorBox = addBox(left + 470, top + 404, 82, preferences.distributionTwoArmor(), value -> saveDraft());
+        distributionOnePercentBox = addBox(left, top + 404, distributionPercentWidth, preferences.distributionOnePercent(), value -> saveDraft());
+        distributionOneArmorBox = addBox(left + distributionPercentWidth + 8, top + 404, distributionArmorWidth, preferences.distributionOneArmor(), value -> saveDraft());
+        distributionOneWeaponBox = addBox(left + distributionPercentWidth + 8 + distributionArmorWidth + 8, top + 404, distributionWeaponWidth, preferences.distributionOneWeapon(), value -> saveDraft());
+        distributionTwoPercentBox = addBox(left + distributionPercentWidth + 8 + distributionArmorWidth + 8 + distributionWeaponWidth + 8, top + 404, distributionPercentWidth, preferences.distributionTwoPercent(), value -> saveDraft());
+        distributionTwoArmorBox = addBox(left + distributionPercentWidth + 8 + distributionArmorWidth + 8 + distributionWeaponWidth + 8 + distributionPercentWidth + 8, top + 404, distributionGroupTwoArmorWidth, preferences.distributionTwoArmor(), value -> saveDraft());
 
-        distributionTwoWeaponBox = addBox(left, top + 444, 160, preferences.distributionTwoWeapon(), value -> saveDraft());
-        distributionThreePercentBox = addBox(left + 170, top + 444, 54, preferences.distributionThreePercent(), value -> saveDraft());
-        distributionThreeArmorBox = addBox(left + 232, top + 444, 160, preferences.distributionThreeArmor(), value -> saveDraft());
-        distributionThreeWeaponBox = addBox(left + 400, top + 444, 152, preferences.distributionThreeWeapon(), value -> saveDraft());
+        distributionTwoWeaponBox = addBox(left, top + 444, distributionWeaponWidth, preferences.distributionTwoWeapon(), value -> saveDraft());
+        distributionThreePercentBox = addBox(left + distributionWeaponWidth + 8, top + 444, distributionPercentWidth, preferences.distributionThreePercent(), value -> saveDraft());
+        distributionThreeArmorBox = addBox(left + distributionWeaponWidth + 8 + distributionPercentWidth + 8, top + 444, distributionArmorWidth, preferences.distributionThreeArmor(), value -> saveDraft());
+        distributionThreeWeaponBox = addBox(left + distributionWeaponWidth + 8 + distributionPercentWidth + 8 + distributionArmorWidth + 8, top + 444, fullRowWidth - (distributionWeaponWidth + distributionPercentWidth + distributionArmorWidth + (8 * 3)), preferences.distributionThreeWeapon(), value -> saveDraft());
 
         formationButton = addRenderableWidget(Button.builder(Component.literal("Formation: " + preferences.summonFormation()), button -> {
             saveDraft();
             preferences.setSummonFormation(nextFormation(preferences.summonFormation()));
             preferences.save();
             init();
-        }).bounds(left + 368, panelTop() + PANEL_HEIGHT - 30, 132, 20).build());
+        }).bounds(panelLeft() + panelWidth() - 180, panelTop() + panelHeight() - 30, 120, 20).build());
 
         summonButton = addRenderableWidget(Button.builder(Component.literal("Summon"), button -> summonBatch())
-                .bounds(left + 508, panelTop() + PANEL_HEIGHT - 30, 44, 20).build());
+                .bounds(panelLeft() + panelWidth() - 52, panelTop() + panelHeight() - 30, 44, 20).build());
 
         refreshSummonState("");
     }
@@ -169,8 +179,8 @@ public final class PlayerBatchScreen extends Screen {
 
         int left = panelLeft();
         int top = panelTop();
-        guiGraphics.fill(left, top, left + PANEL_WIDTH, top + PANEL_HEIGHT, 0xC0151D25);
-        guiGraphics.fill(left + 10, top + 10, left + PANEL_WIDTH - 10, top + PANEL_HEIGHT - 10, 0xA01C2630);
+        guiGraphics.fill(left, top, left + panelWidth(), top + panelHeight(), 0xC0151D25);
+        guiGraphics.fill(left + 10, top + 10, left + panelWidth() - 10, top + panelHeight() - 10, 0xA01C2630);
 
         guiGraphics.drawCenteredString(font, title, width / 2, top + 6, 0xFFFFFFFF);
         switch (activePage) {
@@ -212,15 +222,16 @@ public final class PlayerBatchScreen extends Screen {
         guiGraphics.drawString(font, summary.message, left, previewLineThreeY, summary.valid ? 0xFFBFD8E8 : 0xFFFF9696);
 
         guiGraphics.drawString(font, "Helmet", left, equipmentLabelY, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Chestplate", left + 140, equipmentLabelY, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Leggings", left + 280, equipmentLabelY, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Boots", left + 420, equipmentLabelY, 0xFFEBDCA9);
+        int equipmentWidth = (panelWidth() - 36 - 18 * 3) / 4;
+        guiGraphics.drawString(font, "Chestplate", left + equipmentWidth + 8, equipmentLabelY, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Leggings", left + (equipmentWidth + 8) * 2, equipmentLabelY, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Boots", left + (equipmentWidth + 8) * 3, equipmentLabelY, 0xFFEBDCA9);
 
         guiGraphics.drawString(font, "Main hand", left, loadoutLabelY, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Offhand", left + 140, loadoutLabelY, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Effect", left + 280, loadoutLabelY, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Sec", left + 420, loadoutLabelY, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Amp", left + 490, loadoutLabelY, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Offhand", left + equipmentWidth + 8, loadoutLabelY, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Effect", left + (equipmentWidth + 8) * 2, loadoutLabelY, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Sec", left + panelWidth() - 36 - (62 * 2) - 8, loadoutLabelY, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Amp", left + panelWidth() - 36 - 62, loadoutLabelY, 0xFFEBDCA9);
 
         guiGraphics.drawString(font, "Hotbar CSV 1-9", left, hotbarLabelY, 0xFFEBDCA9);
         guiGraphics.drawString(font, "Example: diamond_sword, bow, bread*8", left + 110, hotbarLabelY, 0xFF8FB7D1);
@@ -230,7 +241,7 @@ public final class PlayerBatchScreen extends Screen {
 
         guiGraphics.drawString(font, "Distribution groups", left, distributionTitleY, 0xFFEBDCA9);
         guiGraphics.drawString(font, "Group 1: % / armor / weapon", left, distributionRowOneLabelY, 0xFF8FB7D1);
-        guiGraphics.drawString(font, "Group 2: % / armor", left + 408, distributionRowOneLabelY, 0xFF8FB7D1);
+        guiGraphics.drawString(font, "Group 2: % / armor", left + panelWidth() - 36 - 54 - 82 - 8, distributionRowOneLabelY, 0xFF8FB7D1);
         guiGraphics.drawString(font, "Group 2 weapon / Group 3: % / armor / weapon", left, distributionRowTwoLabelY, 0xFF8FB7D1);
     }
 
@@ -533,11 +544,19 @@ public final class PlayerBatchScreen extends Screen {
     }
 
     private int panelLeft() {
-        return (width - PANEL_WIDTH) / 2;
+        return PANEL_MARGIN;
     }
 
     private int panelTop() {
-        return (height - PANEL_HEIGHT) / 2;
+        return PANEL_MARGIN;
+    }
+
+    private int panelWidth() {
+        return width - (PANEL_MARGIN * 2);
+    }
+
+    private int panelHeight() {
+        return height - (PANEL_MARGIN * 2);
     }
 
     private enum Page {
