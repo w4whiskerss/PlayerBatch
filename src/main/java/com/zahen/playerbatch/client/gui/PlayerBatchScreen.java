@@ -103,6 +103,7 @@ public final class PlayerBatchScreen extends Screen {
     private void initBotSummoningPage() {
         int left = panelLeft() + 18;
         int top = panelTop() + 58;
+        int footerY = panelTop() + panelHeight() - 30;
         int countWidth = 76;
         int namesLeft = left + 94;
         int namesWidth = panelWidth() - 36 - countWidth - 18;
@@ -114,6 +115,17 @@ public final class PlayerBatchScreen extends Screen {
         int distributionArmorWidth = 160;
         int distributionWeaponWidth = 160;
         int distributionGroupTwoArmorWidth = fullRowWidth - (distributionPercentWidth + distributionArmorWidth + distributionWeaponWidth + distributionPercentWidth + (8 * 4));
+        int distributionTitleY = top + 366;
+        int distributionRowOneY = distributionTitleY + 32;
+        int distributionRowTwoY = distributionRowOneY + 40;
+        int distributionBottom = distributionRowTwoY + 20;
+        int maxDistributionBottom = footerY - 8;
+        if (distributionBottom > maxDistributionBottom) {
+            int shift = distributionBottom - maxDistributionBottom;
+            distributionTitleY -= shift;
+            distributionRowOneY -= shift;
+            distributionRowTwoY -= shift;
+        }
 
         countBox = addBox(left, top + 52, countWidth, preferences.summonCount(), this::refreshSummonState);
         namesBox = addBox(namesLeft, top + 52, namesWidth, preferences.summonNames(), value -> {
@@ -135,26 +147,26 @@ public final class PlayerBatchScreen extends Screen {
         hotbarBox = addBox(left, top + 268, fullRowWidth, preferences.summonHotbar(), value -> saveDraft());
         inventoryBox = addBox(left, top + 320, fullRowWidth, preferences.summonInventory(), value -> saveDraft());
 
-        distributionOnePercentBox = addBox(left, top + 404, distributionPercentWidth, preferences.distributionOnePercent(), value -> saveDraft());
-        distributionOneArmorBox = addBox(left + distributionPercentWidth + 8, top + 404, distributionArmorWidth, preferences.distributionOneArmor(), value -> saveDraft());
-        distributionOneWeaponBox = addBox(left + distributionPercentWidth + 8 + distributionArmorWidth + 8, top + 404, distributionWeaponWidth, preferences.distributionOneWeapon(), value -> saveDraft());
-        distributionTwoPercentBox = addBox(left + distributionPercentWidth + 8 + distributionArmorWidth + 8 + distributionWeaponWidth + 8, top + 404, distributionPercentWidth, preferences.distributionTwoPercent(), value -> saveDraft());
-        distributionTwoArmorBox = addBox(left + distributionPercentWidth + 8 + distributionArmorWidth + 8 + distributionWeaponWidth + 8 + distributionPercentWidth + 8, top + 404, distributionGroupTwoArmorWidth, preferences.distributionTwoArmor(), value -> saveDraft());
+        distributionOnePercentBox = addBox(left, distributionRowOneY, distributionPercentWidth, preferences.distributionOnePercent(), value -> saveDraft());
+        distributionOneArmorBox = addBox(left + distributionPercentWidth + 8, distributionRowOneY, distributionArmorWidth, preferences.distributionOneArmor(), value -> saveDraft());
+        distributionOneWeaponBox = addBox(left + distributionPercentWidth + 8 + distributionArmorWidth + 8, distributionRowOneY, distributionWeaponWidth, preferences.distributionOneWeapon(), value -> saveDraft());
+        distributionTwoPercentBox = addBox(left + distributionPercentWidth + 8 + distributionArmorWidth + 8 + distributionWeaponWidth + 8, distributionRowOneY, distributionPercentWidth, preferences.distributionTwoPercent(), value -> saveDraft());
+        distributionTwoArmorBox = addBox(left + distributionPercentWidth + 8 + distributionArmorWidth + 8 + distributionWeaponWidth + 8 + distributionPercentWidth + 8, distributionRowOneY, distributionGroupTwoArmorWidth, preferences.distributionTwoArmor(), value -> saveDraft());
 
-        distributionTwoWeaponBox = addBox(left, top + 444, distributionWeaponWidth, preferences.distributionTwoWeapon(), value -> saveDraft());
-        distributionThreePercentBox = addBox(left + distributionWeaponWidth + 8, top + 444, distributionPercentWidth, preferences.distributionThreePercent(), value -> saveDraft());
-        distributionThreeArmorBox = addBox(left + distributionWeaponWidth + 8 + distributionPercentWidth + 8, top + 444, distributionArmorWidth, preferences.distributionThreeArmor(), value -> saveDraft());
-        distributionThreeWeaponBox = addBox(left + distributionWeaponWidth + 8 + distributionPercentWidth + 8 + distributionArmorWidth + 8, top + 444, fullRowWidth - (distributionWeaponWidth + distributionPercentWidth + distributionArmorWidth + (8 * 3)), preferences.distributionThreeWeapon(), value -> saveDraft());
+        distributionTwoWeaponBox = addBox(left, distributionRowTwoY, distributionWeaponWidth, preferences.distributionTwoWeapon(), value -> saveDraft());
+        distributionThreePercentBox = addBox(left + distributionWeaponWidth + 8, distributionRowTwoY, distributionPercentWidth, preferences.distributionThreePercent(), value -> saveDraft());
+        distributionThreeArmorBox = addBox(left + distributionWeaponWidth + 8 + distributionPercentWidth + 8, distributionRowTwoY, distributionArmorWidth, preferences.distributionThreeArmor(), value -> saveDraft());
+        distributionThreeWeaponBox = addBox(left + distributionWeaponWidth + 8 + distributionPercentWidth + 8 + distributionArmorWidth + 8, distributionRowTwoY, fullRowWidth - (distributionWeaponWidth + distributionPercentWidth + distributionArmorWidth + (8 * 3)), preferences.distributionThreeWeapon(), value -> saveDraft());
 
         formationButton = addRenderableWidget(Button.builder(Component.literal("Formation: " + preferences.summonFormation()), button -> {
             saveDraft();
             preferences.setSummonFormation(nextFormation(preferences.summonFormation()));
             preferences.save();
             init();
-        }).bounds(panelLeft() + panelWidth() - 180, panelTop() + panelHeight() - 30, 120, 20).build());
+        }).bounds(panelLeft() + panelWidth() - 180, footerY, 120, 20).build());
 
         summonButton = addRenderableWidget(Button.builder(Component.literal("Summon"), button -> summonBatch())
-                .bounds(panelLeft() + panelWidth() - 52, panelTop() + panelHeight() - 30, 44, 20).build());
+                .bounds(panelLeft() + panelWidth() - 52, footerY, 44, 20).build());
 
         refreshSummonState("");
     }
@@ -193,6 +205,7 @@ public final class PlayerBatchScreen extends Screen {
     }
 
     private void renderBotSummoning(GuiGraphics guiGraphics, int left, int top) {
+        int footerY = panelTop() + panelHeight() - 30;
         int introLineOneY = top + 14;
         int introLineTwoY = top + 26;
         int countLabelY = top + 38;
@@ -205,9 +218,21 @@ public final class PlayerBatchScreen extends Screen {
         int loadoutLabelY = top + 202;
         int hotbarLabelY = top + 254;
         int inventoryLabelY = top + 306;
-        int distributionTitleY = top + 378;
-        int distributionRowOneLabelY = top + 392;
-        int distributionRowTwoLabelY = top + 432;
+        int distributionTitleY = top + 366;
+        int distributionRowOneLabelY = distributionTitleY + 18;
+        int distributionRowOneY = distributionRowOneLabelY + 14;
+        int distributionRowTwoLabelY = distributionRowOneY + 26;
+        int distributionRowTwoY = distributionRowTwoLabelY + 14;
+        int distributionBottom = distributionRowTwoY + 20;
+        int maxDistributionBottom = footerY - 8;
+        if (distributionBottom > maxDistributionBottom) {
+            int shift = distributionBottom - maxDistributionBottom;
+            distributionTitleY -= shift;
+            distributionRowOneLabelY -= shift;
+            distributionRowOneY -= shift;
+            distributionRowTwoLabelY -= shift;
+            distributionRowTwoY -= shift;
+        }
 
         guiGraphics.drawString(font, "Page 1: Bot Summoning", left, top, 0xFFEBDCA9);
         guiGraphics.drawString(font, "Usernames are fixed. Remaining bots stay random.", left, introLineOneY, 0xFFC3CED7);
