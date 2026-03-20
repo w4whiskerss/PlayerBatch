@@ -278,6 +278,7 @@ public final class PlayerBatchScreen extends Screen {
 
     private EditBox addBox(int x, int y, int width, String value, java.util.function.Consumer<String> responder) {
         EditBox box = addRenderableWidget(new EditBox(font, x, y, width, 20, Component.empty()));
+        box.setMaxLength(32767);
         box.setValue(value == null ? "" : value);
         box.setResponder(responder);
         return box;
