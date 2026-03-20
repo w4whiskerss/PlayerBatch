@@ -47,6 +47,8 @@ loom {
         client {
             programArg "--username"
             programArg "WhiskersDev"
+            programArg "--quickPlaySingleplayer"
+            programArg "DevWorld Flat"
         }
     }
 }
