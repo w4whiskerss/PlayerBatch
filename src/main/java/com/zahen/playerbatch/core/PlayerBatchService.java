@@ -1294,6 +1294,7 @@ public final class PlayerBatchService {
         private final CommandSourceStack feedbackSource;
         private final CommandSourceStack executionSource;
         private final Deque<SummonEntry> remainingEntries;
+        private final List<String> batchNames;
         private final Set<String> pendingTagNames = new LinkedHashSet<>();
         private final int totalCount;
         private final String formation;
@@ -1308,6 +1309,7 @@ public final class PlayerBatchService {
             this.feedbackSource = source;
             this.executionSource = source.withSuppressedOutput();
             this.formation = formation;
+            this.batchNames = List.copyOf(names);
             this.remainingEntries = new ArrayDeque<>(buildFormationEntries(source, names, formation));
             this.totalCount = names.size();
             this.bossBar = new ServerBossEvent(
@@ -1393,6 +1395,7 @@ public final class PlayerBatchService {
         }
 
         private void finish() {
+            tagAllBatchBotsOnce();
             bossBar.removeAllPlayers();
             feedbackSource.sendSuccess(
                     () -> Component.literal(
@@ -1400,6 +1403,17 @@ public final class PlayerBatchService {
                     ).withStyle(failCount > 0 ? ChatFormatting.GOLD : ChatFormatting.GREEN),
                     true
             );
+        }
+
+        private void tagAllBatchBotsOnce() {
+            for (String batchName : batchNames) {
+                ServerPlayer player = server.getPlayerList().getPlayerByName(batchName);
+                if (player instanceof EntityPlayerMPFake fakePlayer) {
+                    owner.markManagedBot(fakePlayer);
+                    pendingTagNames.remove(batchName);
+                }
+            }
+            tryTagKnownPlayers();
         }
 
         private void discard() {
