@@ -95,19 +95,20 @@ public final class PlayerBatchScreen extends Screen {
         guiGraphics.drawString(font, "Names: comma-separated, like Alice, Bob, Charlie", left + 20, top + 92, 0x8FB7D1);
 
         guiGraphics.drawString(font, "Live preview", left + 20, top + 138, 0x9BE5B8);
-        guiGraphics.drawString(font, "Custom names: " + summary.customNameCount, left + 20, top + 156, 0xFFFFFF);
+        guiGraphics.drawString(font, "Custom names: " + summary.customNameCount(), left + 20, top + 156, 0xFFFFFF);
         guiGraphics.drawString(font, "Random bots: " + summary.randomBotCount, left + 160, top + 156, 0xFFFFFF);
         guiGraphics.drawString(font, "Final count: " + summary.effectiveCount, left + 280, top + 156, 0xFFFFFF);
+        guiGraphics.drawString(font, "Parsed names: " + summary.previewNames(), left + 20, top + 168, 0xD9E4F1);
 
         int statusColor = summary.errorMessage == null ? 0xBFD8E8 : 0xFF9696;
         String statusText = summary.errorMessage == null
                 ? (infoMessage != null ? infoMessage : "Draft saved. Taken names fall back to random names during summon.")
                 : summary.errorMessage;
-        guiGraphics.drawString(font, statusText, left + 20, top + 180, statusColor);
+        guiGraphics.drawString(font, statusText, left + 20, top + 188, statusColor);
 
         guiGraphics.drawString(font, "Batch status: " + (snapshot.batchActive() ? "running" : "idle")
                 + " | queued " + snapshot.queuedBatches()
-                + " | selected " + snapshot.selectedNames().size(), left + 20, top + 198, 0xC3CED7);
+                + " | selected " + snapshot.selectedNames().size(), left + 20, top + 206, 0xC3CED7);
 
         super.render(guiGraphics, mouseX, mouseY, partialTick);
     }
@@ -118,8 +119,7 @@ public final class PlayerBatchScreen extends Screen {
         if (!summary.canContinue) {
             return;
         }
-        infoMessage = "Page 2 is next, but it is not built yet.";
-        setStatusLabel("Page 2 is next, but it is not built yet.");
+        Minecraft.getInstance().setScreen(new PlayerBatchSummonLoadoutScreen(this));
     }
 
     private void closeKeepingDraft() {
@@ -169,15 +169,15 @@ public final class PlayerBatchScreen extends Screen {
         int randomCount = Math.max(0, effectiveCount - parsedNames.size());
 
         if (duplicate != null) {
-            return new ValidationSummary(parsedNames.size(), effectiveCount, randomCount, false, "Duplicate username: " + duplicate);
+            return new ValidationSummary(parsedNames, effectiveCount, randomCount, false, "Duplicate username: " + duplicate);
         }
         if (invalid != null) {
-            return new ValidationSummary(parsedNames.size(), effectiveCount, randomCount, false, "Invalid username: " + invalid + " (use 3-16 letters, numbers, or _)");
+            return new ValidationSummary(parsedNames, effectiveCount, randomCount, false, "Invalid username: " + invalid + " (use 3-16 letters, numbers, or _)");
         }
         if (effectiveCount <= 0) {
-            return new ValidationSummary(parsedNames.size(), effectiveCount, randomCount, false, "Bot count must be at least 1.");
+            return new ValidationSummary(parsedNames, effectiveCount, randomCount, false, "Bot count must be at least 1.");
         }
-        return new ValidationSummary(parsedNames.size(), effectiveCount, randomCount, true, null);
+        return new ValidationSummary(parsedNames, effectiveCount, randomCount, true, null);
     }
 
     private void autoGrowCount() {
@@ -260,18 +260,32 @@ public final class PlayerBatchScreen extends Screen {
     }
 
     private record ValidationSummary(
-            int customNameCount,
+            List<String> parsedNames,
             int effectiveCount,
             int randomBotCount,
             boolean canContinue,
             String errorMessage
     ) {
         private static ValidationSummary empty() {
-            return new ValidationSummary(0, 1, 1, true, null);
+            return new ValidationSummary(List.of(), 1, 1, true, null);
         }
 
         private String buttonLabel() {
             return "Continue with " + effectiveCount;
+        }
+
+        private int customNameCount() {
+            return parsedNames.size();
+        }
+
+        private String previewNames() {
+            if (parsedNames.isEmpty()) {
+                return "No custom names yet.";
+            }
+            if (parsedNames.size() <= 5) {
+                return String.join(", ", parsedNames);
+            }
+            return String.join(", ", parsedNames.subList(0, 5)) + " ...";
         }
     }
 }
