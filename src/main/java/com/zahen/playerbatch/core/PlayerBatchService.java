@@ -58,15 +58,19 @@ public final class PlayerBatchService {
     }
 
     public static int requestSummon(CommandSourceStack source, int count, String rawNames) {
-        return requestSummon(source, count, rawNames, DEFAULT_FORMATION);
+        return requestSummon(source, count, rawNames, BotConfig.empty());
     }
 
     public static int requestSummon(CommandSourceStack source, int count, String rawNames, String rawFormation) {
+        return requestSummon(source, count, rawNames, new BotConfig(rawFormation, new BotLoadout()));
+    }
+
+    public static int requestSummon(CommandSourceStack source, int count, String rawNames, BotConfig config) {
         if (source.getServer() == null) {
             return 0;
         }
 
-        String formation = normalizeFormation(rawFormation);
+        String formation = normalizeFormation(config.formation());
         if (formation == null) {
             source.sendFailure(Component.literal("Unknown formation. Use: circle, square, triangle, random, single block."));
             return 0;
@@ -98,7 +102,7 @@ public final class PlayerBatchService {
                 return;
             }
 
-            int queued = state(source.getServer()).queueBatch(source, plannedNames, formation);
+            int queued = state(source.getServer()).queueBatch(source, plannedNames, new BotConfig(formation, config.loadout()));
             if (queued <= 0) {
                 source.sendFailure(Component.literal("No valid bot names were available to queue."));
                 return;
@@ -399,7 +403,7 @@ public final class PlayerBatchService {
     }
 
     public static void requestSummonFromGui(ServerPlayer player, int count, String rawNames, String formation) {
-        requestSummon(player.createCommandSourceStack(), count, rawNames, formation);
+        requestSummon(player.createCommandSourceStack(), count, rawNames, BotConfig.decode(formation));
     }
 
     public static void runSelectedActionFromGui(ServerPlayer player, String action) {
@@ -654,6 +658,10 @@ public final class PlayerBatchService {
         }
 
         private int queueBatch(CommandSourceStack source, List<String> names, String formation) {
+            return queueBatch(source, names, new BotConfig(formation, new BotLoadout()));
+        }
+
+        private int queueBatch(CommandSourceStack source, List<String> names, BotConfig config) {
             if (names.isEmpty()) {
                 return 0;
             }
@@ -664,8 +672,8 @@ public final class PlayerBatchService {
                 uniqueNames.add(uniqueName);
                 reservedNames.add(uniqueName);
             }
-            queue.addLast(new SummonBatch(this, server, source, uniqueNames, formation));
-            debug("Queued summon batch with {} names using {} formation", uniqueNames.size(), formation);
+            queue.addLast(new SummonBatch(this, server, source, uniqueNames, config));
+            debug("Queued summon batch with {} names using {} formation", uniqueNames.size(), config.formation());
             broadcast(false);
             return uniqueNames.size();
         }
@@ -1117,6 +1125,7 @@ public final class PlayerBatchService {
                 activeBatch.discard();
                 activeBatch = null;
             }
+            stripAllManagedBots();
             for (EntityPlayerMPFake player : selectedPlayers()) {
                 removeSelectionGlow(player);
             }
@@ -1127,6 +1136,12 @@ public final class PlayerBatchService {
             managedBotIds.clear();
             managedBotNames.clear();
             queue.clear();
+        }
+
+        private void stripAllManagedBots() {
+            for (EntityPlayerMPFake fakePlayer : fakePlayers()) {
+                cleanupManagedBot(fakePlayer);
+            }
         }
 
         private void cleanupGroupsAndBrains() {
@@ -1296,19 +1311,22 @@ public final class PlayerBatchService {
         private final Deque<SummonEntry> remainingEntries;
         private final List<String> batchNames;
         private final Set<String> pendingTagNames = new LinkedHashSet<>();
+        private final Map<String, BotConfig> pendingConfigs = new LinkedHashMap<>();
         private final int totalCount;
         private final String formation;
+        private final BotConfig config;
         private final ServerBossEvent bossBar;
         private boolean started;
         private int successCount;
         private int failCount;
 
-        private SummonBatch(ServerState owner, MinecraftServer server, CommandSourceStack source, List<String> names, String formation) {
+        private SummonBatch(ServerState owner, MinecraftServer server, CommandSourceStack source, List<String> names, BotConfig config) {
             this.owner = owner;
             this.server = server;
             this.feedbackSource = source;
             this.executionSource = source.withSuppressedOutput();
-            this.formation = formation;
+            this.config = config;
+            this.formation = config.formation();
             this.batchNames = List.copyOf(names);
             this.remainingEntries = new ArrayDeque<>(buildFormationEntries(source, names, formation));
             this.totalCount = names.size();
@@ -1351,8 +1369,10 @@ public final class PlayerBatchService {
                     successCount++;
                     if (spawnedPlayer instanceof EntityPlayerMPFake fakePlayer) {
                         owner.markManagedBot(fakePlayer);
+                        applyConfig(fakePlayer);
                     } else {
                         pendingTagNames.add(nextName);
+                        pendingConfigs.put(nextName, config);
                     }
                     debug("Spawn accepted for {} in {} formation", nextName, formation);
                 } else {
@@ -1371,10 +1391,14 @@ public final class PlayerBatchService {
                 ServerPlayer queuedPlayer = server.getPlayerList().getPlayerByName(pendingName);
                 if (queuedPlayer instanceof EntityPlayerMPFake fakePlayer) {
                     owner.markManagedBot(fakePlayer);
+                    applyConfig(fakePlayer);
                     tagged.add(pendingName);
                 }
             }
             pendingTagNames.removeAll(tagged);
+            for (String taggedName : tagged) {
+                pendingConfigs.remove(taggedName);
+            }
         }
 
         private void collectReservedNames(Collection<String> reserved) {
@@ -1410,10 +1434,16 @@ public final class PlayerBatchService {
                 ServerPlayer player = server.getPlayerList().getPlayerByName(batchName);
                 if (player instanceof EntityPlayerMPFake fakePlayer) {
                     owner.markManagedBot(fakePlayer);
+                    applyConfig(fakePlayer);
                     pendingTagNames.remove(batchName);
+                    pendingConfigs.remove(batchName);
                 }
             }
             tryTagKnownPlayers();
+        }
+
+        private void applyConfig(EntityPlayerMPFake fakePlayer) {
+            config.loadout().applyTo(fakePlayer);
         }
 
         private void discard() {
@@ -1730,6 +1760,25 @@ public final class PlayerBatchService {
     private static final class BotBrain {
         private EnumSet<BotAiMode> modes = EnumSet.of(BotAiMode.IDLE);
         private String groupKey;
+    }
+
+    public static void cleanupManagedBot(Entity entity) {
+        if (entity instanceof EntityPlayerMPFake fakePlayer) {
+            cleanupManagedBot(fakePlayer);
+        }
+    }
+
+    private static void cleanupManagedBot(EntityPlayerMPFake fakePlayer) {
+        fakePlayer.removeAllEffects();
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            fakePlayer.setItemSlot(slot, ItemStack.EMPTY);
+        }
+        for (int index = 0; index < fakePlayer.getInventory().getContainerSize(); index++) {
+            fakePlayer.getInventory().setItem(index, ItemStack.EMPTY);
+        }
+        for (String tag : List.copyOf(fakePlayer.getTags())) {
+            fakePlayer.removeTag(tag);
+        }
     }
 }
 

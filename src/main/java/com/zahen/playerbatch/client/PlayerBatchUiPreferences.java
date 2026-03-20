@@ -16,6 +16,17 @@ public final class PlayerBatchUiPreferences {
     private static final String KEY_SUMMON_COUNT = "summonCount";
     private static final String KEY_SUMMON_NAMES = "summonNames";
     private static final String KEY_SUMMON_FORMATION = "summonFormation";
+    private static final String KEY_SUMMON_PANE = "summonPane";
+    private static final String KEY_SUMMON_HEAD = "summonHead";
+    private static final String KEY_SUMMON_CHEST = "summonChest";
+    private static final String KEY_SUMMON_LEGS = "summonLegs";
+    private static final String KEY_SUMMON_FEET = "summonFeet";
+    private static final String KEY_SUMMON_MAINHAND = "summonMainhand";
+    private static final String KEY_SUMMON_OFFHAND = "summonOffhand";
+    private static final String KEY_SUMMON_HOTBAR = "summonHotbar";
+    private static final String KEY_SUMMON_EFFECT_ID = "summonEffectId";
+    private static final String KEY_SUMMON_EFFECT_DURATION = "summonEffectDuration";
+    private static final String KEY_SUMMON_EFFECT_AMPLIFIER = "summonEffectAmplifier";
     private static final String KEY_SELECT_RANGE = "selectRange";
     private static final String KEY_SELECT_CLOSEST = "selectClosest";
     private static final String KEY_GROUP_NAME = "groupName";
@@ -36,6 +47,17 @@ public final class PlayerBatchUiPreferences {
     private String summonCount = "8";
     private String summonNames = "";
     private String summonFormation = "circle";
+    private String summonPane = "SETUP";
+    private String summonHead = "";
+    private String summonChest = "";
+    private String summonLegs = "";
+    private String summonFeet = "";
+    private String summonMainhand = "diamond_sword";
+    private String summonOffhand = "";
+    private String summonHotbar = "";
+    private String summonEffectId = "speed";
+    private String summonEffectDuration = "30";
+    private String summonEffectAmplifier = "0";
     private String selectRange = "16";
     private String selectClosest = "10";
     private String groupName = "alpha";
@@ -72,6 +94,17 @@ public final class PlayerBatchUiPreferences {
         preferences.summonCount = read(properties, KEY_SUMMON_COUNT, preferences.summonCount);
         preferences.summonNames = read(properties, KEY_SUMMON_NAMES, preferences.summonNames);
         preferences.summonFormation = read(properties, KEY_SUMMON_FORMATION, preferences.summonFormation);
+        preferences.summonPane = read(properties, KEY_SUMMON_PANE, preferences.summonPane);
+        preferences.summonHead = read(properties, KEY_SUMMON_HEAD, preferences.summonHead);
+        preferences.summonChest = read(properties, KEY_SUMMON_CHEST, preferences.summonChest);
+        preferences.summonLegs = read(properties, KEY_SUMMON_LEGS, preferences.summonLegs);
+        preferences.summonFeet = read(properties, KEY_SUMMON_FEET, preferences.summonFeet);
+        preferences.summonMainhand = read(properties, KEY_SUMMON_MAINHAND, preferences.summonMainhand);
+        preferences.summonOffhand = read(properties, KEY_SUMMON_OFFHAND, preferences.summonOffhand);
+        preferences.summonHotbar = read(properties, KEY_SUMMON_HOTBAR, preferences.summonHotbar);
+        preferences.summonEffectId = read(properties, KEY_SUMMON_EFFECT_ID, preferences.summonEffectId);
+        preferences.summonEffectDuration = read(properties, KEY_SUMMON_EFFECT_DURATION, preferences.summonEffectDuration);
+        preferences.summonEffectAmplifier = read(properties, KEY_SUMMON_EFFECT_AMPLIFIER, preferences.summonEffectAmplifier);
         preferences.selectRange = read(properties, KEY_SELECT_RANGE, preferences.selectRange);
         preferences.selectClosest = read(properties, KEY_SELECT_CLOSEST, preferences.selectClosest);
         preferences.groupName = read(properties, KEY_GROUP_NAME, preferences.groupName);
@@ -98,6 +131,17 @@ public final class PlayerBatchUiPreferences {
         properties.setProperty(KEY_SUMMON_COUNT, summonCount);
         properties.setProperty(KEY_SUMMON_NAMES, summonNames);
         properties.setProperty(KEY_SUMMON_FORMATION, summonFormation);
+        properties.setProperty(KEY_SUMMON_PANE, summonPane);
+        properties.setProperty(KEY_SUMMON_HEAD, summonHead);
+        properties.setProperty(KEY_SUMMON_CHEST, summonChest);
+        properties.setProperty(KEY_SUMMON_LEGS, summonLegs);
+        properties.setProperty(KEY_SUMMON_FEET, summonFeet);
+        properties.setProperty(KEY_SUMMON_MAINHAND, summonMainhand);
+        properties.setProperty(KEY_SUMMON_OFFHAND, summonOffhand);
+        properties.setProperty(KEY_SUMMON_HOTBAR, summonHotbar);
+        properties.setProperty(KEY_SUMMON_EFFECT_ID, summonEffectId);
+        properties.setProperty(KEY_SUMMON_EFFECT_DURATION, summonEffectDuration);
+        properties.setProperty(KEY_SUMMON_EFFECT_AMPLIFIER, summonEffectAmplifier);
         properties.setProperty(KEY_SELECT_RANGE, selectRange);
         properties.setProperty(KEY_SELECT_CLOSEST, selectClosest);
         properties.setProperty(KEY_GROUP_NAME, groupName);
@@ -151,6 +195,94 @@ public final class PlayerBatchUiPreferences {
 
     public void setSummonFormation(String summonFormation) {
         this.summonFormation = summonFormation;
+    }
+
+    public String summonPane() {
+        return summonPane;
+    }
+
+    public void setSummonPane(String summonPane) {
+        this.summonPane = summonPane;
+    }
+
+    public String summonHead() {
+        return summonHead;
+    }
+
+    public void setSummonHead(String summonHead) {
+        this.summonHead = summonHead;
+    }
+
+    public String summonChest() {
+        return summonChest;
+    }
+
+    public void setSummonChest(String summonChest) {
+        this.summonChest = summonChest;
+    }
+
+    public String summonLegs() {
+        return summonLegs;
+    }
+
+    public void setSummonLegs(String summonLegs) {
+        this.summonLegs = summonLegs;
+    }
+
+    public String summonFeet() {
+        return summonFeet;
+    }
+
+    public void setSummonFeet(String summonFeet) {
+        this.summonFeet = summonFeet;
+    }
+
+    public String summonMainhand() {
+        return summonMainhand;
+    }
+
+    public void setSummonMainhand(String summonMainhand) {
+        this.summonMainhand = summonMainhand;
+    }
+
+    public String summonOffhand() {
+        return summonOffhand;
+    }
+
+    public void setSummonOffhand(String summonOffhand) {
+        this.summonOffhand = summonOffhand;
+    }
+
+    public String summonHotbar() {
+        return summonHotbar;
+    }
+
+    public void setSummonHotbar(String summonHotbar) {
+        this.summonHotbar = summonHotbar;
+    }
+
+    public String summonEffectId() {
+        return summonEffectId;
+    }
+
+    public void setSummonEffectId(String summonEffectId) {
+        this.summonEffectId = summonEffectId;
+    }
+
+    public String summonEffectDuration() {
+        return summonEffectDuration;
+    }
+
+    public void setSummonEffectDuration(String summonEffectDuration) {
+        this.summonEffectDuration = summonEffectDuration;
+    }
+
+    public String summonEffectAmplifier() {
+        return summonEffectAmplifier;
+    }
+
+    public void setSummonEffectAmplifier(String summonEffectAmplifier) {
+        this.summonEffectAmplifier = summonEffectAmplifier;
     }
 
     public String selectRange() {

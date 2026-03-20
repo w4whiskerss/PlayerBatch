@@ -2,7 +2,9 @@ package com.zahen.playerbatch.client.gui;
 
 import com.zahen.playerbatch.client.PlayerBatchClient;
 import com.zahen.playerbatch.client.PlayerBatchUiPreferences;
+import com.zahen.playerbatch.core.BotConfig;
 import com.zahen.playerbatch.core.BotAiMode;
+import com.zahen.playerbatch.core.BotLoadout;
 import com.zahen.playerbatch.core.PlayerBatchService;
 import com.zahen.playerbatch.network.PlayerBatchNetworking;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -15,6 +17,7 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.EquipmentSlot;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -24,6 +27,8 @@ import java.util.Locale;
 public class PlayerBatchScreen extends Screen {
     private final Screen parent;
     private final List<AbstractWidget> summoningWidgets = new ArrayList<>();
+    private final List<AbstractWidget> summoningSetupWidgets = new ArrayList<>();
+    private final List<AbstractWidget> summoningLoadoutWidgets = new ArrayList<>();
     private final List<AbstractWidget> customizationWidgets = new ArrayList<>();
     private final List<AbstractWidget> debugWidgets = new ArrayList<>();
     private static final List<String> FORMATION_OPTIONS = List.of("circle", "square", "triangle", "random", "single block");
@@ -71,6 +76,7 @@ public class PlayerBatchScreen extends Screen {
             .toList();
 
     private Tab activeTab = Tab.SUMMONING;
+    private SummonPane activeSummonPane = SummonPane.SETUP;
     private PlayerBatchService.PlayerBatchSnapshot snapshot;
     private final PlayerBatchUiPreferences preferences;
 
@@ -81,6 +87,16 @@ public class PlayerBatchScreen extends Screen {
     private EditBox perTickBox;
     private Button formationButton;
     private int formationIndex = 0;
+    private EditBox summonHeadBox;
+    private EditBox summonChestBox;
+    private EditBox summonLegsBox;
+    private EditBox summonFeetBox;
+    private EditBox summonMainhandBox;
+    private EditBox summonOffhandBox;
+    private EditBox summonHotbarBox;
+    private EditBox summonEffectBox;
+    private EditBox summonEffectDurationBox;
+    private EditBox summonEffectAmplifierBox;
 
     private EditBox rangeBox;
     private EditBox closestBox;
@@ -104,6 +120,7 @@ public class PlayerBatchScreen extends Screen {
         this.snapshot = PlayerBatchClient.latestSnapshot();
         this.preferences = PlayerBatchUiPreferences.load();
         this.activeTab = parseTab(preferences.activeTab());
+        this.activeSummonPane = parseSummonPane(preferences.summonPane());
     }
 
     @Override
@@ -135,20 +152,22 @@ public class PlayerBatchScreen extends Screen {
     }
 
     private void initSummoningTab(int left, int top) {
-        limitSlider = register(addRenderableWidget(new LimitSlider(left, top + 18, 180, 20, snapshot.maxSummonCount())), summoningWidgets);
+        initSummonPaneButtons(left, top);
 
-        limitBox = register(addRenderableWidget(new EditBox(font, left + 188, top + 18, 56, 20, Component.literal("Limit"))), summoningWidgets);
+        limitSlider = register(addRenderableWidget(new LimitSlider(left, top + 18, 180, 20, snapshot.maxSummonCount())), summoningSetupWidgets);
+
+        limitBox = register(addRenderableWidget(new EditBox(font, left + 188, top + 18, 56, 20, Component.literal("Limit"))), summoningSetupWidgets);
         limitBox.setValue(Integer.toString(snapshot.maxSummonCount()));
         register(addRenderableWidget(Button.builder(Component.literal("Apply Limit"), button -> applyLimit())
-                .bounds(left + 248, top + 18, 98, 20).build()), summoningWidgets);
+                .bounds(left + 248, top + 18, 98, 20).build()), summoningSetupWidgets);
         register(addRenderableWidget(Button.builder(Component.literal("Recommended"), button -> {
             int recommended = recommendedBotAmount();
             limitBox.setValue(Integer.toString(recommended));
             countBox.setValue(Integer.toString(Math.min(recommended, parseInt(countBox.getValue(), 1))));
             savePreferences();
-        }).bounds(left, top + 44, 116, 20).build()), summoningWidgets);
+        }).bounds(left, top + 44, 116, 20).build()), summoningSetupWidgets);
 
-        perTickBox = register(addRenderableWidget(new EditBox(font, left + 124, top + 44, 56, 20, Component.literal("Rate"))), summoningWidgets);
+        perTickBox = register(addRenderableWidget(new EditBox(font, left + 124, top + 44, 56, 20, Component.literal("Rate"))), summoningSetupWidgets);
         perTickBox.setValue(Integer.toString(snapshot.maxSpawnsPerTick()));
         register(addRenderableWidget(Button.builder(Component.literal("Apply Tick Rate"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SET_SPAWNS_PER_TICK,
@@ -156,32 +175,45 @@ public class PlayerBatchScreen extends Screen {
                 "",
                 parseInt(perTickBox.getValue(), snapshot.maxSpawnsPerTick()),
                 false
-        ))).bounds(left + 186, top + 44, 112, 20).build()), summoningWidgets);
+        ))).bounds(left + 186, top + 44, 112, 20).build()), summoningSetupWidgets);
 
-        countBox = register(addRenderableWidget(new EditBox(font, left, top + 88, 70, 20, Component.literal("Count"))), summoningWidgets);
+        countBox = register(addRenderableWidget(new EditBox(font, left, top + 88, 70, 20, Component.literal("Count"))), summoningSetupWidgets);
         countBox.setValue(preferences.summonCount());
         countBox.setResponder(value -> savePreferences());
-        namesBox = register(addRenderableWidget(new EditBox(font, left + 76, top + 88, 270, 20, Component.literal("Usernames"))), summoningWidgets);
+        namesBox = register(addRenderableWidget(new EditBox(font, left + 76, top + 88, 270, 20, Component.literal("Usernames"))), summoningSetupWidgets);
         namesBox.setValue(preferences.summonNames());
         namesBox.setHint(Component.literal("{Alpha, Bravo, Charlie}"));
         namesBox.setResponder(value -> savePreferences());
 
         formationIndex = formationIndex(preferences.summonFormation());
         formationButton = register(addRenderableWidget(Button.builder(formationLabel(), button -> cycleFormation())
-                .bounds(left, top + 114, 120, 20).build()), summoningWidgets);
+                .bounds(left, top + 114, 120, 20).build()), summoningSetupWidgets);
         register(addRenderableWidget(Button.builder(Component.literal("Summon Batch"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SUMMON,
                 namesBox.getValue(),
-                currentFormation(),
+                buildSummonConfig().encode(),
                 parseInt(countBox.getValue(), 1),
                 false
-        ))).bounds(left + 128, top + 114, 110, 20).build()), summoningWidgets);
+        ))).bounds(left + 128, top + 114, 110, 20).build()), summoningSetupWidgets);
         register(addRenderableWidget(Button.builder(Component.literal("Get Wand"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.GIVE_WAND, "", "", 0, false
-        ))).bounds(left + 244, top + 114, 102, 20).build()), summoningWidgets);
+        ))).bounds(left + 244, top + 114, 102, 20).build()), summoningSetupWidgets);
         register(addRenderableWidget(Button.builder(Component.literal("Select All Bots"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SELECT_ALL, "", "", 0, false
-        ))).bounds(left, top + 140, 140, 20).build()), summoningWidgets);
+        ))).bounds(left, top + 140, 140, 20).build()), summoningSetupWidgets);
+
+        summonHeadBox = register(addRenderableWidget(new EditBox(font, left, top + 52, 116, 20, Component.literal("Helmet"))), summoningLoadoutWidgets);
+        summonChestBox = register(addRenderableWidget(new EditBox(font, left + 126, top + 52, 116, 20, Component.literal("Chestplate"))), summoningLoadoutWidgets);
+        summonLegsBox = register(addRenderableWidget(new EditBox(font, left + 252, top + 52, 116, 20, Component.literal("Leggings"))), summoningLoadoutWidgets);
+        summonFeetBox = register(addRenderableWidget(new EditBox(font, left, top + 82, 116, 20, Component.literal("Boots"))), summoningLoadoutWidgets);
+        summonMainhandBox = register(addRenderableWidget(new EditBox(font, left + 126, top + 82, 116, 20, Component.literal("Main Hand"))), summoningLoadoutWidgets);
+        summonOffhandBox = register(addRenderableWidget(new EditBox(font, left + 252, top + 82, 116, 20, Component.literal("Offhand"))), summoningLoadoutWidgets);
+        summonHotbarBox = register(addRenderableWidget(new EditBox(font, left, top + 118, 368, 20, Component.literal("Hotbar"))), summoningLoadoutWidgets);
+        summonHotbarBox.setHint(Component.literal("slot1,slot2,slot3..."));
+        summonEffectBox = register(addRenderableWidget(new EditBox(font, left, top + 160, 140, 20, Component.literal("Effect"))), summoningLoadoutWidgets);
+        summonEffectDurationBox = register(addRenderableWidget(new EditBox(font, left + 148, top + 160, 64, 20, Component.literal("Secs"))), summoningLoadoutWidgets);
+        summonEffectAmplifierBox = register(addRenderableWidget(new EditBox(font, left + 220, top + 160, 64, 20, Component.literal("Amp"))), summoningLoadoutWidgets);
+        initSummonLoadoutFields();
     }
 
     private void initCustomizationTab(int left, int top) {
@@ -369,13 +401,26 @@ public class PlayerBatchScreen extends Screen {
         }
 
         guiGraphics.drawString(font, "Tab 1: Summoning", left, top, 0xEBDCA9);
-        guiGraphics.drawString(font, "Bot count, username flow, performance limits, and live summon queue.", left, top + 68, 0xC3CED7);
-        guiGraphics.drawString(font, "Formation preview: " + currentFormation(), left, top + 140, 0xA8E8D2);
-        guiGraphics.drawString(font, "Select All Bots ignores distance and grabs every managed PlayerBatch bot.", left, top + 156, 0x9BE5B8);
-        guiGraphics.drawString(font, progressText(), left, top + 172, 0xFFFFFF);
-        guiGraphics.drawString(font, warningText(), left, top + 188, warningColor(), false);
-        guiGraphics.drawString(font, "Loadouts, percent distributions, presets, and scenario save/load are next backend slices.", left, top + 212, 0xE8C89C);
-        guiGraphics.drawString(font, "Spawned PlayerBatch bots are automatically tagged with 'bot'.", left, top + 228, 0x9BE5B8);
+        if (activeSummonPane == SummonPane.SETUP) {
+            guiGraphics.drawString(font, "Setup pane: count, usernames, formation, and batch limits before spawn.", left, top + 68, 0xC3CED7);
+            guiGraphics.drawString(font, "Formation preview: " + currentFormation(), left, top + 140, 0xA8E8D2);
+            guiGraphics.drawString(font, "Select All Bots ignores distance and grabs every managed PlayerBatch bot.", left, top + 156, 0x9BE5B8);
+            guiGraphics.drawString(font, progressText(), left, top + 172, 0xFFFFFF);
+            guiGraphics.drawString(font, warningText(), left, top + 188, warningColor(), false);
+            guiGraphics.drawString(font, "Summon now carries a prebuilt BotConfig instead of just post-spawn edits.", left, top + 212, 0xE8C89C);
+            guiGraphics.drawString(font, "Spawned PlayerBatch bots are automatically tagged with 'bot'.", left, top + 228, 0x9BE5B8);
+            return;
+        }
+        if (activeSummonPane == SummonPane.LOADOUT) {
+            guiGraphics.drawString(font, "Loadout pane: armor, hands, hotbar row, and summon-time effects.", left, top + 68, 0xC3CED7);
+            guiGraphics.drawString(font, "These settings are packed into BotConfig and applied as each bot resolves.", left, top + 84, 0x9BE5B8);
+            guiGraphics.drawString(font, "Hotbar format: comma-separated items for slots 1-9.", left, top + 100, 0x9BE5B8);
+            guiGraphics.drawString(font, "Example: stone_sword,bow,bread", left, top + 116, 0xA8E8D2);
+            return;
+        }
+        guiGraphics.drawString(font, "Distribution pane", left, top + 68, 0xC3CED7);
+        guiGraphics.drawString(font, "BotConfig and summon-time loadouts are live now; percent split rules are the next slice.", left, top + 84, 0xE8C89C);
+        guiGraphics.drawString(font, "This pane is where preset-driven 50/30/20-style loadout spreads will land.", left, top + 100, 0xE8C89C);
     }
 
     private void renderCustomizationText(GuiGraphics guiGraphics, int left, int top) {
@@ -420,6 +465,8 @@ public class PlayerBatchScreen extends Screen {
 
     private void refreshTabVisibility() {
         setTabVisible(summoningWidgets, activeTab == Tab.SUMMONING);
+        setTabVisible(summoningSetupWidgets, activeTab == Tab.SUMMONING && activeSummonPane == SummonPane.SETUP);
+        setTabVisible(summoningLoadoutWidgets, activeTab == Tab.SUMMONING && activeSummonPane == SummonPane.LOADOUT);
         setTabVisible(customizationWidgets, activeTab == Tab.CUSTOMIZATION);
         setTabVisible(debugWidgets, activeTab == Tab.DEBUG);
     }
@@ -450,12 +497,57 @@ public class PlayerBatchScreen extends Screen {
         return Component.literal("Formation: " + currentFormation());
     }
 
+    private void initSummonPaneButtons(int left, int top) {
+        register(addRenderableWidget(Button.builder(Component.literal("Setup"), button -> switchSummonPane(SummonPane.SETUP))
+                .bounds(left, top + 18, 88, 20).build()), summoningWidgets);
+        register(addRenderableWidget(Button.builder(Component.literal("Loadout"), button -> switchSummonPane(SummonPane.LOADOUT))
+                .bounds(left + 94, top + 18, 88, 20).build()), summoningWidgets);
+        register(addRenderableWidget(Button.builder(Component.literal("Distribution"), button -> switchSummonPane(SummonPane.DISTRIBUTION))
+                .bounds(left + 188, top + 18, 104, 20).build()), summoningWidgets);
+    }
+
+    private void initSummonLoadoutFields() {
+        bindSummonItemBox(summonHeadBox, preferences.summonHead());
+        bindSummonItemBox(summonChestBox, preferences.summonChest());
+        bindSummonItemBox(summonLegsBox, preferences.summonLegs());
+        bindSummonItemBox(summonFeetBox, preferences.summonFeet());
+        bindSummonItemBox(summonMainhandBox, preferences.summonMainhand());
+        bindSummonItemBox(summonOffhandBox, preferences.summonOffhand());
+        summonHotbarBox.setValue(preferences.summonHotbar());
+        summonHotbarBox.setResponder(value -> savePreferences());
+        summonEffectBox.setValue(preferences.summonEffectId());
+        summonEffectBox.setResponder(value -> {
+            updateAutocomplete(summonEffectBox, EFFECT_OPTIONS);
+            savePreferences();
+        });
+        updateAutocomplete(summonEffectBox, EFFECT_OPTIONS);
+        summonEffectDurationBox.setValue(preferences.summonEffectDuration());
+        summonEffectDurationBox.setResponder(value -> savePreferences());
+        summonEffectAmplifierBox.setValue(preferences.summonEffectAmplifier());
+        summonEffectAmplifierBox.setResponder(value -> savePreferences());
+    }
+
+    private void bindSummonItemBox(EditBox box, String value) {
+        box.setValue(value);
+        box.setResponder(raw -> {
+            updateAutocomplete(box, ITEM_OPTIONS);
+            savePreferences();
+        });
+        updateAutocomplete(box, ITEM_OPTIONS);
+    }
+
     private void cycleFormation() {
         formationIndex = (formationIndex + 1) % FORMATION_OPTIONS.size();
         if (formationButton != null) {
             formationButton.setMessage(formationLabel());
         }
         savePreferences();
+    }
+
+    private void switchSummonPane(SummonPane pane) {
+        activeSummonPane = pane;
+        savePreferences();
+        refreshTabVisibility();
     }
 
     private String currentFormation() {
@@ -506,6 +598,13 @@ public class PlayerBatchScreen extends Screen {
     }
 
     private void refreshAutocompleteSuggestions() {
+        updateAutocomplete(summonHeadBox, ITEM_OPTIONS);
+        updateAutocomplete(summonChestBox, ITEM_OPTIONS);
+        updateAutocomplete(summonLegsBox, ITEM_OPTIONS);
+        updateAutocomplete(summonFeetBox, ITEM_OPTIONS);
+        updateAutocomplete(summonMainhandBox, ITEM_OPTIONS);
+        updateAutocomplete(summonOffhandBox, ITEM_OPTIONS);
+        updateAutocomplete(summonEffectBox, EFFECT_OPTIONS);
         updateAutocomplete(groupBox, currentGroupOptions());
         updateAutocomplete(aiModeBox, AI_MODE_OPTIONS);
         updateAutocomplete(slotBox, SLOT_OPTIONS);
@@ -534,6 +633,13 @@ public class PlayerBatchScreen extends Screen {
     }
 
     private void completeFocusedAutocomplete() {
+        completeBox(summonHeadBox, ITEM_OPTIONS);
+        completeBox(summonChestBox, ITEM_OPTIONS);
+        completeBox(summonLegsBox, ITEM_OPTIONS);
+        completeBox(summonFeetBox, ITEM_OPTIONS);
+        completeBox(summonMainhandBox, ITEM_OPTIONS);
+        completeBox(summonOffhandBox, ITEM_OPTIONS);
+        completeBox(summonEffectBox, EFFECT_OPTIONS);
         completeBox(groupBox, currentGroupOptions());
         completeBox(aiModeBox, AI_MODE_OPTIONS);
         completeBox(slotBox, SLOT_OPTIONS);
@@ -612,11 +718,30 @@ public class PlayerBatchScreen extends Screen {
         }
     }
 
+    private SummonPane parseSummonPane(String rawPane) {
+        try {
+            return SummonPane.valueOf((rawPane == null ? SummonPane.SETUP.name() : rawPane).trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return SummonPane.SETUP;
+        }
+    }
+
     private void savePreferences() {
         preferences.setActiveTab(activeTab.name());
         preferences.setSummonCount(valueOf(countBox));
         preferences.setSummonNames(valueOf(namesBox));
         preferences.setSummonFormation(currentFormation());
+        preferences.setSummonPane(activeSummonPane.name());
+        preferences.setSummonHead(normalizeRegistryValue(valueOf(summonHeadBox)));
+        preferences.setSummonChest(normalizeRegistryValue(valueOf(summonChestBox)));
+        preferences.setSummonLegs(normalizeRegistryValue(valueOf(summonLegsBox)));
+        preferences.setSummonFeet(normalizeRegistryValue(valueOf(summonFeetBox)));
+        preferences.setSummonMainhand(normalizeRegistryValue(valueOf(summonMainhandBox)));
+        preferences.setSummonOffhand(normalizeRegistryValue(valueOf(summonOffhandBox)));
+        preferences.setSummonHotbar(valueOf(summonHotbarBox));
+        preferences.setSummonEffectId(normalizeRegistryValue(valueOf(summonEffectBox)));
+        preferences.setSummonEffectDuration(valueOf(summonEffectDurationBox));
+        preferences.setSummonEffectAmplifier(valueOf(summonEffectAmplifierBox));
         preferences.setSelectRange(valueOf(rangeBox));
         preferences.setSelectClosest(valueOf(closestBox));
         preferences.setGroupName(valueOf(groupBox));
@@ -631,6 +756,47 @@ public class PlayerBatchScreen extends Screen {
         preferences.setDirection(valueOf(directionBox).toLowerCase(Locale.ROOT));
         preferences.setBlock(valueOf(blockBox).toLowerCase(Locale.ROOT));
         preferences.save();
+    }
+
+    private BotConfig buildSummonConfig() {
+        BotLoadout loadout = new BotLoadout();
+        putEquipment(loadout, EquipmentSlot.HEAD, summonHeadBox);
+        putEquipment(loadout, EquipmentSlot.CHEST, summonChestBox);
+        putEquipment(loadout, EquipmentSlot.LEGS, summonLegsBox);
+        putEquipment(loadout, EquipmentSlot.FEET, summonFeetBox);
+        putEquipment(loadout, EquipmentSlot.MAINHAND, summonMainhandBox);
+        putEquipment(loadout, EquipmentSlot.OFFHAND, summonOffhandBox);
+        String[] hotbarEntries = valueOf(summonHotbarBox).split(",");
+        for (int index = 0; index < hotbarEntries.length && index < 9; index++) {
+            String itemId = normalizeRegistryValue(hotbarEntries[index]);
+            if (!itemId.isEmpty()) {
+                loadout.hotbar().put(index, new BotLoadout.StackSpec(itemId, 1));
+            }
+        }
+        String effectId = normalizeRegistryValue(valueOf(summonEffectBox));
+        if (!effectId.isEmpty()) {
+            loadout.effects().add(new BotLoadout.EffectSpec(
+                    effectId,
+                    parseInt(valueOf(summonEffectDurationBox), 30),
+                    parseInt(valueOf(summonEffectAmplifierBox), 0)
+            ));
+        }
+        return new BotConfig(currentFormation(), loadout);
+    }
+
+    private void putEquipment(BotLoadout loadout, EquipmentSlot slot, EditBox box) {
+        String itemId = normalizeRegistryValue(valueOf(box));
+        if (!itemId.isEmpty()) {
+            loadout.equipment().put(slot, new BotLoadout.StackSpec(itemId, 1));
+        }
+    }
+
+    private String normalizeRegistryValue(String raw) {
+        String trimmed = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        return trimmed.contains(":") ? trimmed : "minecraft:" + trimmed;
     }
 
     private String valueOf(EditBox box) {
@@ -662,6 +828,12 @@ public class PlayerBatchScreen extends Screen {
         public String subtitle() {
             return subtitle;
         }
+    }
+
+    private enum SummonPane {
+        SETUP,
+        LOADOUT,
+        DISTRIBUTION
     }
 
     private static final class LimitSlider extends AbstractSliderButton {

@@ -5,6 +5,7 @@ import com.zahen.playerbatch.core.PlayerBatchService;
 import com.zahen.playerbatch.config.PlayerBatchConfig;
 import com.zahen.playerbatch.item.SelectionWandItem;
 import com.zahen.playerbatch.network.PlayerBatchNetworking;
+import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
@@ -46,6 +47,7 @@ public class PlayerBatch implements ModInitializer {
             }
             return PlayerBatchService.toggleSelection(serverPlayer, entity) ? InteractionResult.SUCCESS : InteractionResult.PASS;
         });
+        ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> PlayerBatchService.cleanupManagedBot(entity));
         CarpetServer.manageExtension(EXTENSION);
         LOGGER.info("Registered {} as a Carpet extension", MOD_ID);
     }
