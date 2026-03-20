@@ -23,7 +23,7 @@ import java.util.Set;
 
 public final class PlayerBatchScreen extends Screen {
     private static final int PANEL_WIDTH = 520;
-    private static final int PANEL_HEIGHT = 430;
+    private static final int PANEL_HEIGHT = 446;
     private static final List<String> FORMATIONS = List.of("circle", "square", "triangle", "random", "single block");
 
     private final Screen parent;
@@ -103,27 +103,27 @@ public final class PlayerBatchScreen extends Screen {
 
     private void initBotSummoningPage() {
         int left = panelLeft() + 18;
-        int top = panelTop() + 58;
+        int top = panelTop() + 48;
 
-        countBox = addBox(left, top + 34, 70, preferences.summonCount(), this::refreshSummonState);
-        namesBox = addBox(left + 82, top + 34, 402, preferences.summonNames(), value -> {
+        countBox = addBox(left, top + 42, 70, preferences.summonCount(), this::refreshSummonState);
+        namesBox = addBox(left + 82, top + 42, 402, preferences.summonNames(), value -> {
             autoGrowCount();
             refreshSummonState(value);
         });
 
-        headBox = addBox(left, top + 132, 116, preferences.summonHead(), value -> saveDraft());
-        chestBox = addBox(left + 124, top + 132, 116, preferences.summonChest(), value -> saveDraft());
-        legsBox = addBox(left + 248, top + 132, 116, preferences.summonLegs(), value -> saveDraft());
-        feetBox = addBox(left + 372, top + 132, 112, preferences.summonFeet(), value -> saveDraft());
+        headBox = addBox(left, top + 140, 116, preferences.summonHead(), value -> saveDraft());
+        chestBox = addBox(left + 124, top + 140, 116, preferences.summonChest(), value -> saveDraft());
+        legsBox = addBox(left + 248, top + 140, 116, preferences.summonLegs(), value -> saveDraft());
+        feetBox = addBox(left + 372, top + 140, 112, preferences.summonFeet(), value -> saveDraft());
 
-        mainhandBox = addBox(left, top + 180, 116, preferences.summonMainhand(), value -> saveDraft());
-        offhandBox = addBox(left + 124, top + 180, 116, preferences.summonOffhand(), value -> saveDraft());
-        effectIdBox = addBox(left + 248, top + 180, 116, preferences.summonEffectId(), value -> saveDraft());
-        effectDurationBox = addBox(left + 372, top + 180, 52, preferences.summonEffectDuration(), value -> saveDraft());
-        effectAmplifierBox = addBox(left + 432, top + 180, 52, preferences.summonEffectAmplifier(), value -> saveDraft());
+        mainhandBox = addBox(left, top + 188, 116, preferences.summonMainhand(), value -> saveDraft());
+        offhandBox = addBox(left + 124, top + 188, 116, preferences.summonOffhand(), value -> saveDraft());
+        effectIdBox = addBox(left + 248, top + 188, 116, preferences.summonEffectId(), value -> saveDraft());
+        effectDurationBox = addBox(left + 372, top + 188, 52, preferences.summonEffectDuration(), value -> saveDraft());
+        effectAmplifierBox = addBox(left + 432, top + 188, 52, preferences.summonEffectAmplifier(), value -> saveDraft());
 
-        hotbarBox = addBox(left, top + 232, 484, preferences.summonHotbar(), value -> saveDraft());
-        inventoryBox = addBox(left, top + 284, 484, preferences.summonInventory(), value -> saveDraft());
+        hotbarBox = addBox(left, top + 236, 484, preferences.summonHotbar(), value -> saveDraft());
+        inventoryBox = addBox(left, top + 288, 484, preferences.summonInventory(), value -> saveDraft());
 
         distributionOnePercentBox = addBox(left, top + 344, 52, preferences.distributionOnePercent(), value -> saveDraft());
         distributionOneArmorBox = addBox(left + 60, top + 344, 130, preferences.distributionOneArmor(), value -> saveDraft());
@@ -131,10 +131,10 @@ public final class PlayerBatchScreen extends Screen {
         distributionTwoPercentBox = addBox(left + 338, top + 344, 52, preferences.distributionTwoPercent(), value -> saveDraft());
         distributionTwoArmorBox = addBox(left + 398, top + 344, 86, preferences.distributionTwoArmor(), value -> saveDraft());
 
-        distributionTwoWeaponBox = addBox(left, top + 372, 132, preferences.distributionTwoWeapon(), value -> saveDraft());
-        distributionThreePercentBox = addBox(left + 140, top + 372, 52, preferences.distributionThreePercent(), value -> saveDraft());
-        distributionThreeArmorBox = addBox(left + 200, top + 372, 130, preferences.distributionThreeArmor(), value -> saveDraft());
-        distributionThreeWeaponBox = addBox(left + 338, top + 372, 146, preferences.distributionThreeWeapon(), value -> saveDraft());
+        distributionTwoWeaponBox = addBox(left, top + 384, 132, preferences.distributionTwoWeapon(), value -> saveDraft());
+        distributionThreePercentBox = addBox(left + 140, top + 384, 52, preferences.distributionThreePercent(), value -> saveDraft());
+        distributionThreeArmorBox = addBox(left + 200, top + 384, 130, preferences.distributionThreeArmor(), value -> saveDraft());
+        distributionThreeWeaponBox = addBox(left + 338, top + 384, 146, preferences.distributionThreeWeapon(), value -> saveDraft());
 
         formationButton = addRenderableWidget(Button.builder(Component.literal("Formation: " + preferences.summonFormation()), button -> {
             saveDraft();
@@ -174,7 +174,7 @@ public final class PlayerBatchScreen extends Screen {
 
         guiGraphics.drawCenteredString(font, title, width / 2, top + 6, 0xFFFFFFFF);
         switch (activePage) {
-            case BOT_SUMMONING -> renderBotSummoning(guiGraphics, left + 18, top + 58);
+            case BOT_SUMMONING -> renderBotSummoning(guiGraphics, left + 18, top + 48);
             case ACTIONS -> renderActions(guiGraphics, left + 18, top + 74);
             case DEBUGGING -> renderDebug(guiGraphics, left + 18, top + 74);
         }
@@ -187,35 +187,35 @@ public final class PlayerBatchScreen extends Screen {
         guiGraphics.drawString(font, "Usernames are fixed. Remaining bots stay random.", left, top + 14, 0xFFC3CED7);
         guiGraphics.drawString(font, "Setup is still applied after spawn settles.", left, top + 26, 0xFFC3CED7);
 
-        guiGraphics.drawString(font, "Count", left, top + 22, 0xFF9BE5B8);
-        guiGraphics.drawString(font, "Custom usernames (comma-separated)", left + 82, top + 22, 0xFF9BE5B8);
+        guiGraphics.drawString(font, "Count", left, top + 30, 0xFF9BE5B8);
+        guiGraphics.drawString(font, "Custom usernames (comma-separated)", left + 82, top + 30, 0xFF9BE5B8);
 
-        guiGraphics.drawString(font, "Live preview", left, top + 62, 0xFF9BE5B8);
-        guiGraphics.drawString(font, "Custom: " + summary.customCount() + " | Random: " + summary.randomCount + " | Final: " + summary.finalCount, left, top + 76, 0xFFFFFFFF);
-        guiGraphics.drawString(font, "Parsed names: " + summary.previewNames(), left, top + 90, 0xFFD9E4F1);
-        guiGraphics.drawString(font, summary.message, left, top + 404, summary.valid ? 0xFFBFD8E8 : 0xFFFF9696);
+        guiGraphics.drawString(font, "Live preview", left, top + 70, 0xFF9BE5B8);
+        guiGraphics.drawString(font, "Custom: " + summary.customCount() + " | Random: " + summary.randomCount + " | Final: " + summary.finalCount, left, top + 84, 0xFFFFFFFF);
+        guiGraphics.drawString(font, "Parsed names: " + summary.previewNames(), left, top + 98, 0xFFD9E4F1);
+        guiGraphics.drawString(font, summary.message, left, top + 112, summary.valid ? 0xFFBFD8E8 : 0xFFFF9696);
 
-        guiGraphics.drawString(font, "Helmet", left, top + 116, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Chestplate", left + 124, top + 116, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Leggings", left + 248, top + 116, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Boots", left + 372, top + 116, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Helmet", left, top + 132, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Chestplate", left + 124, top + 132, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Leggings", left + 248, top + 132, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Boots", left + 372, top + 132, 0xFFEBDCA9);
 
-        guiGraphics.drawString(font, "Main hand", left, top + 164, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Offhand", left + 124, top + 164, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Effect", left + 248, top + 164, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Sec", left + 372, top + 164, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Amp", left + 432, top + 164, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Main hand", left, top + 180, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Offhand", left + 124, top + 180, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Effect", left + 248, top + 180, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Sec", left + 372, top + 180, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Amp", left + 432, top + 180, 0xFFEBDCA9);
 
-        guiGraphics.drawString(font, "Hotbar CSV 1-9", left, top + 216, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Example: diamond_sword, bow, bread*8", left + 110, top + 216, 0xFF8FB7D1);
+        guiGraphics.drawString(font, "Hotbar CSV 1-9", left, top + 228, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Example: diamond_sword, bow, bread*8", left + 110, top + 228, 0xFF8FB7D1);
 
-        guiGraphics.drawString(font, "Backpack CSV 10-36", left, top + 268, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Example: cobblestone*64, torch*32", left + 128, top + 268, 0xFF8FB7D1);
+        guiGraphics.drawString(font, "Backpack CSV 10-36", left, top + 280, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Example: cobblestone*64, torch*32", left + 128, top + 280, 0xFF8FB7D1);
 
-        guiGraphics.drawString(font, "Distribution groups", left, top + 320, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Group 1: % / armor / weapon", left, top + 334, 0xFF8FB7D1);
-        guiGraphics.drawString(font, "Group 2: % / armor", left + 338, top + 334, 0xFF8FB7D1);
-        guiGraphics.drawString(font, "Group 2 weapon / Group 3: % / armor / weapon", left, top + 362, 0xFF8FB7D1);
+        guiGraphics.drawString(font, "Distribution groups", left, top + 324, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Group 1: % / armor / weapon", left, top + 338, 0xFF8FB7D1);
+        guiGraphics.drawString(font, "Group 2: % / armor", left + 338, top + 338, 0xFF8FB7D1);
+        guiGraphics.drawString(font, "Group 2 weapon / Group 3: % / armor / weapon", left, top + 378, 0xFF8FB7D1);
     }
 
     private void renderActions(GuiGraphics guiGraphics, int left, int top) {
