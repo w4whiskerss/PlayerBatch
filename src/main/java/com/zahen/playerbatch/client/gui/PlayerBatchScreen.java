@@ -179,26 +179,29 @@ public class PlayerBatchScreen extends Screen {
         register(addRenderableWidget(Button.builder(Component.literal("Get Wand"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.GIVE_WAND, "", "", 0, false
         ))).bounds(left + 244, top + 114, 102, 20).build()), summoningWidgets);
+        register(addRenderableWidget(Button.builder(Component.literal("Select All Bots"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
+                PlayerBatchNetworking.ActionKind.SELECT_ALL, "", "", 0, false
+        ))).bounds(left, top + 140, 140, 20).build()), summoningWidgets);
     }
 
     private void initCustomizationTab(int left, int top) {
-        register(addRenderableWidget(Button.builder(Component.literal("Select All"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
+        register(addRenderableWidget(Button.builder(Component.literal("Select All Bots"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SELECT_ALL, "", "", 0, false
-        ))).bounds(left, top + 18, 92, 20).build()), customizationWidgets);
+        ))).bounds(left, top + 18, 120, 20).build()), customizationWidgets);
 
-        rangeBox = register(addRenderableWidget(new EditBox(font, left + 98, top + 18, 48, 20, Component.literal("Range"))), customizationWidgets);
+        rangeBox = register(addRenderableWidget(new EditBox(font, left + 126, top + 18, 48, 20, Component.literal("Range"))), customizationWidgets);
         rangeBox.setValue(preferences.selectRange());
         rangeBox.setResponder(value -> savePreferences());
         register(addRenderableWidget(Button.builder(Component.literal("Nearest X"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SELECT_RANGE, "", "", parseInt(rangeBox.getValue(), 16), false
-        ))).bounds(left + 152, top + 18, 90, 20).build()), customizationWidgets);
+        ))).bounds(left + 180, top + 18, 90, 20).build()), customizationWidgets);
 
-        closestBox = register(addRenderableWidget(new EditBox(font, left + 248, top + 18, 48, 20, Component.literal("Count"))), customizationWidgets);
+        closestBox = register(addRenderableWidget(new EditBox(font, left + 276, top + 18, 48, 20, Component.literal("Count"))), customizationWidgets);
         closestBox.setValue(preferences.selectClosest());
         closestBox.setResponder(value -> savePreferences());
         register(addRenderableWidget(Button.builder(Component.literal("Closest"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SELECT_CLOSEST, "", "", parseInt(closestBox.getValue(), 10), false
-        ))).bounds(left + 302, top + 18, 84, 20).build()), customizationWidgets);
+        ))).bounds(left + 330, top + 18, 56, 20).build()), customizationWidgets);
 
         register(addRenderableWidget(Button.builder(Component.literal("Clear Selection"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.CLEAR_SELECTION, "", "", 0, false
@@ -368,10 +371,11 @@ public class PlayerBatchScreen extends Screen {
         guiGraphics.drawString(font, "Tab 1: Summoning", left, top, 0xEBDCA9);
         guiGraphics.drawString(font, "Bot count, username flow, performance limits, and live summon queue.", left, top + 68, 0xC3CED7);
         guiGraphics.drawString(font, "Formation preview: " + currentFormation(), left, top + 140, 0xA8E8D2);
-        guiGraphics.drawString(font, progressText(), left, top + 156, 0xFFFFFF);
-        guiGraphics.drawString(font, warningText(), left, top + 172, warningColor(), false);
-        guiGraphics.drawString(font, "Loadouts, percent distributions, presets, and scenario save/load are next backend slices.", left, top + 196, 0xE8C89C);
-        guiGraphics.drawString(font, "Spawned PlayerBatch bots are automatically tagged with 'bot'.", left, top + 212, 0x9BE5B8);
+        guiGraphics.drawString(font, "Select All Bots ignores distance and grabs every managed PlayerBatch bot.", left, top + 156, 0x9BE5B8);
+        guiGraphics.drawString(font, progressText(), left, top + 172, 0xFFFFFF);
+        guiGraphics.drawString(font, warningText(), left, top + 188, warningColor(), false);
+        guiGraphics.drawString(font, "Loadouts, percent distributions, presets, and scenario save/load are next backend slices.", left, top + 212, 0xE8C89C);
+        guiGraphics.drawString(font, "Spawned PlayerBatch bots are automatically tagged with 'bot'.", left, top + 228, 0x9BE5B8);
     }
 
     private void renderCustomizationText(GuiGraphics guiGraphics, int left, int top) {
@@ -381,6 +385,7 @@ public class PlayerBatchScreen extends Screen {
 
         guiGraphics.drawString(font, "Tab 2: Customization", left, top, 0xEBDCA9);
         guiGraphics.drawString(font, "Selection, groups, AI mode assignment, item/armor editing, effects, and teleport controls.", left, top + 68, 0xC3CED7);
+        guiGraphics.drawString(font, "Select All Bots is global and does not use distance limits.", left, top + 84, 0x9BE5B8);
         guiGraphics.drawString(font, "Supported AI modes: idle, combat, patrol, guard, follow, flee", left, top + 156, 0x9BE5B8);
         guiGraphics.drawString(font, "Item slots: head, chest, legs, feet, mainhand, offhand", left, top + 172, 0x9BE5B8);
         guiGraphics.drawString(font, "Autocomplete works for group, AI, slot, item, effect, action, direction, and block fields.", left, top + 188, 0x9BE5B8);
