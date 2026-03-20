@@ -23,6 +23,7 @@ public class PlayerBatchScreen extends Screen {
     private final List<AbstractWidget> summoningWidgets = new ArrayList<>();
     private final List<AbstractWidget> customizationWidgets = new ArrayList<>();
     private final List<AbstractWidget> debugWidgets = new ArrayList<>();
+    private static final List<String> FORMATION_OPTIONS = List.of("circle", "square", "triangle", "random", "single block");
 
     private Tab activeTab = Tab.SUMMONING;
     private PlayerBatchService.PlayerBatchSnapshot snapshot;
@@ -32,7 +33,8 @@ public class PlayerBatchScreen extends Screen {
     private EditBox namesBox;
     private EditBox limitBox;
     private EditBox perTickBox;
-    private EditBox summonFormationBox;
+    private Button formationButton;
+    private int formationIndex = 0;
 
     private EditBox rangeBox;
     private EditBox closestBox;
@@ -106,8 +108,8 @@ public class PlayerBatchScreen extends Screen {
         namesBox = register(addRenderableWidget(new EditBox(font, left + 76, top + 88, 270, 20, Component.literal("Usernames"))), summoningWidgets);
         namesBox.setHint(Component.literal("{Alpha, Bravo, Charlie}"));
 
-        summonFormationBox = register(addRenderableWidget(new EditBox(font, left, top + 114, 120, 20, Component.literal("Formation"))), summoningWidgets);
-        summonFormationBox.setValue("circle");
+        formationButton = register(addRenderableWidget(Button.builder(formationLabel(), button -> cycleFormation())
+                .bounds(left, top + 114, 120, 20).build()), summoningWidgets);
         register(addRenderableWidget(Button.builder(Component.literal("Summon Batch"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SUMMON,
                 namesBox.getValue(),
@@ -202,6 +204,9 @@ public class PlayerBatchScreen extends Screen {
         if (debugButton != null) {
             debugButton.setMessage(debugLabel());
         }
+        if (formationButton != null) {
+            formationButton.setMessage(formationLabel());
+        }
     }
 
     @Override
@@ -231,7 +236,7 @@ public class PlayerBatchScreen extends Screen {
 
         guiGraphics.drawString(font, "Tab 1: Summoning", left, top, 0xEBDCA9);
         guiGraphics.drawString(font, "Bot count, username flow, performance limits, and live summon queue.", left, top + 68, 0xC3CED7);
-        guiGraphics.drawString(font, "Formation preview: " + normalizedText(summonFormationBox == null ? "circle" : summonFormationBox.getValue(), "circle"), left, top + 140, 0xA8E8D2);
+        guiGraphics.drawString(font, "Formation preview: " + currentFormation(), left, top + 140, 0xA8E8D2);
         guiGraphics.drawString(font, progressText(), left, top + 156, 0xFFFFFF);
         guiGraphics.drawString(font, warningText(), left, top + 172, warningColor(), false);
         guiGraphics.drawString(font, "Loadouts, percent distributions, presets, and scenario save/load are next backend slices.", left, top + 196, 0xE8C89C);
@@ -300,6 +305,21 @@ public class PlayerBatchScreen extends Screen {
         return Component.literal("Debug: " + (snapshot.debugEnabled() ? "ON" : "OFF"));
     }
 
+    private Component formationLabel() {
+        return Component.literal("Formation: " + currentFormation());
+    }
+
+    private void cycleFormation() {
+        formationIndex = (formationIndex + 1) % FORMATION_OPTIONS.size();
+        if (formationButton != null) {
+            formationButton.setMessage(formationLabel());
+        }
+    }
+
+    private String currentFormation() {
+        return FORMATION_OPTIONS.get(Math.max(0, Math.min(formationIndex, FORMATION_OPTIONS.size() - 1)));
+    }
+
     private String progressText() {
         if (!snapshot.batchActive()) {
             return "Queue idle. Queued batches: " + snapshot.queuedBatches();
@@ -341,11 +361,6 @@ public class PlayerBatchScreen extends Screen {
             summary += " +" + (snapshot.selectedNames().size() - displayCount) + " more";
         }
         return summary;
-    }
-
-    private String normalizedText(String raw, String fallback) {
-        String value = raw == null ? fallback : raw.trim();
-        return value.isEmpty() ? fallback : value.toLowerCase(Locale.ROOT);
     }
 
     private int parseInt(String raw, int fallback) {
