@@ -1025,7 +1025,7 @@ public final class PlayerBatchService {
         }
 
         private void forgetManagedBot(EntityPlayerMPFake fakePlayer) {
-            selectedIds.remove(fakePlayer.getUUID());
+            clearSelectionState(fakePlayer);
             brains.remove(fakePlayer.getUUID());
             managedBotIds.remove(fakePlayer.getUUID());
             String normalized = normalizePlayerName(fakePlayer.getGameProfile().name());
@@ -1035,6 +1035,11 @@ public final class PlayerBatchService {
             for (BotGroup group : groups.values()) {
                 group.memberIds().remove(fakePlayer.getUUID());
             }
+        }
+
+        private void clearSelectionState(EntityPlayerMPFake fakePlayer) {
+            selectedIds.remove(fakePlayer.getUUID());
+            removeSelectionGlow(fakePlayer);
         }
 
         private void ensureBotTag(EntityPlayerMPFake fakePlayer) {
@@ -1171,6 +1176,7 @@ public final class PlayerBatchService {
         private void handlePlayerDisconnect(ServerPlayer player) {
             subscribers.remove(player.getUUID());
             if (player instanceof EntityPlayerMPFake fakePlayer && isManagedBot(fakePlayer)) {
+                clearSelectionState(fakePlayer);
                 cleanupManagedBot(fakePlayer);
                 forgetManagedBot(fakePlayer);
             }
@@ -1551,6 +1557,7 @@ public final class PlayerBatchService {
             for (String batchName : batchNames) {
                 ServerPlayer player = server.getPlayerList().getPlayerByName(batchName);
                 if (player instanceof EntityPlayerMPFake fakePlayer) {
+                    owner.clearSelectionState(fakePlayer);
                     cleanupManagedBot(fakePlayer);
                     owner.markManagedBot(fakePlayer);
                     applyConfig(fakePlayer, plannedConfigs.getOrDefault(batchName, baseConfig()));
@@ -1972,6 +1979,7 @@ public final class PlayerBatchService {
     }
 
     private static void cleanupManagedBot(EntityPlayerMPFake fakePlayer, boolean preserveManagedTag) {
+        fakePlayer.setGlowingTag(false);
         fakePlayer.removeAllEffects();
         for (EquipmentSlot slot : EquipmentSlot.values()) {
             fakePlayer.setItemSlot(slot, ItemStack.EMPTY);
