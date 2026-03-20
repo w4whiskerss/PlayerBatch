@@ -13,7 +13,11 @@ public record CombatPresetSpec(
         int offhandCount,
         boolean selfHealEnabled,
         boolean healingItemsEnabled,
-        List<BotLoadout.StackSpec> healingItems
+        List<BotLoadout.StackSpec> healingItems,
+        int reach,
+        boolean fakeHitEnabled,
+        boolean stapEnabled,
+        boolean damageEnabled
 ) {
     public CombatPresetSpec {
         armorTier = armorTier == null ? ArmorTier.NONE : armorTier;
@@ -21,6 +25,7 @@ public record CombatPresetSpec(
         offhandMode = offhandMode == null ? OffhandMode.SHIELD : offhandMode;
         offhandCount = Math.max(0, offhandCount);
         healingItems = healingItems == null ? List.of() : List.copyOf(healingItems);
+        reach = Math.max(1, Math.min(10, reach));
         if (!selfHealEnabled) {
             healingItemsEnabled = false;
             healingItems = List.of();

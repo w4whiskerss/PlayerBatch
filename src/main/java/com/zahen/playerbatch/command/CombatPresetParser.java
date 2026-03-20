@@ -23,6 +23,13 @@ public final class CombatPresetParser {
             "-totem{5}",
             "-selfheal{true}",
             "-selfheal{false}",
+            "-reach{3}",
+            "-fakehit{true}",
+            "-fakehit{false}",
+            "-stap{true}",
+            "-stap{false}",
+            "-damage{true}",
+            "-damage{false}",
             "-healingitems{false}",
             "-healingitems{true, golden_apple*32, splash_potion_of_healing*9}"
     );
@@ -38,6 +45,10 @@ public final class CombatPresetParser {
         boolean selfHeal = false;
         boolean healingItemsEnabled = false;
         List<BotLoadout.StackSpec> healingItems = new ArrayList<>();
+        int reach = 3;
+        boolean fakeHitEnabled = true;
+        boolean stapEnabled = false;
+        boolean damageEnabled = true;
 
         for (String token : splitOptions(rawOptions)) {
             String normalized = normalizeOption(token);
@@ -72,6 +83,22 @@ public final class CombatPresetParser {
                 }
                 continue;
             }
+            if (normalized.startsWith("reach")) {
+                reach = parseRangedBraceInt(normalized, 3, 1, 10);
+                continue;
+            }
+            if (normalized.startsWith("fakehit")) {
+                fakeHitEnabled = parseBraceBoolean(normalized, true);
+                continue;
+            }
+            if (normalized.startsWith("stap")) {
+                stapEnabled = parseBraceBoolean(normalized, false);
+                continue;
+            }
+            if (normalized.startsWith("damage")) {
+                damageEnabled = parseBraceBoolean(normalized, true);
+                continue;
+            }
             if (normalized.startsWith("healingitems")) {
                 HealingItemsParseResult result = parseHealingItems(normalized);
                 healingItemsEnabled = result.enabled();
@@ -79,7 +106,19 @@ public final class CombatPresetParser {
             }
         }
 
-        return new CombatPresetSpec(armorTier, toolTier, offhandMode, offhandCount, selfHeal, healingItemsEnabled, healingItems);
+        return new CombatPresetSpec(
+                armorTier,
+                toolTier,
+                offhandMode,
+                offhandCount,
+                selfHeal,
+                healingItemsEnabled,
+                healingItems,
+                reach,
+                fakeHitEnabled,
+                stapEnabled,
+                damageEnabled
+        );
     }
 
     public static String validate(String rawOptions) {
@@ -103,6 +142,22 @@ public final class CombatPresetParser {
             }
             if (normalized.startsWith("selfheal")) {
                 parseBraceBoolean(normalized, false);
+                continue;
+            }
+            if (normalized.startsWith("reach")) {
+                parseRangedBraceInt(normalized, 3, 1, 10);
+                continue;
+            }
+            if (normalized.startsWith("fakehit")) {
+                parseBraceBoolean(normalized, true);
+                continue;
+            }
+            if (normalized.startsWith("stap")) {
+                parseBraceBoolean(normalized, false);
+                continue;
+            }
+            if (normalized.startsWith("damage")) {
+                parseBraceBoolean(normalized, true);
                 continue;
             }
             if (normalized.startsWith("healingitems")) {
@@ -191,6 +246,14 @@ public final class CombatPresetParser {
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException("Invalid number in option: -" + token);
         }
+    }
+
+    private static int parseRangedBraceInt(String token, int fallback, int min, int max) {
+        int parsed = parseBraceInt(token, fallback);
+        if (parsed < min || parsed > max) {
+            throw new IllegalArgumentException("Expected a number between " + min + " and " + max + " in option: -" + token);
+        }
+        return parsed;
     }
 
     private static boolean parseBraceBoolean(String token, boolean fallback) {

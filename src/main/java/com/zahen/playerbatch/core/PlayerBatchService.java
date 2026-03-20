@@ -1,5 +1,7 @@
 package com.zahen.playerbatch.core;
 
+import carpet.fakes.ServerPlayerInterface;
+import carpet.helpers.EntityPlayerActionPack;
 import carpet.patches.EntityPlayerMPFake;
 import com.zahen.playerbatch.PlayerBatch;
 import com.zahen.playerbatch.command.CombatPresetParser;
@@ -21,6 +23,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.BossEvent;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
@@ -1212,6 +1215,10 @@ public final class PlayerBatchService {
             BotBrain brain = ensureBrain(fakePlayer);
             brain.combatPreset = combatPreset;
             brain.healCooldownTicks = 0;
+            brain.attackRetreatTicks = 0;
+            brain.stuckTicks = 0;
+            brain.scriptedUse = null;
+            stopActionMovement(fakePlayer, true);
             if (combatPreset != null) {
                 brain.modes = EnumSet.of(BotAiMode.COMBAT);
             } else if (brain.groupKey == null) {
@@ -1376,36 +1383,38 @@ public final class PlayerBatchService {
                     ? findNearestThreat(fakePlayer, 16.0D)
                     : null;
 
+            if (brain.healCooldownTicks > 0) {
+                brain.healCooldownTicks--;
+            }
+            if (brain.attackRetreatTicks > 0) {
+                brain.attackRetreatTicks--;
+            }
+            if (tickScriptedUse(fakePlayer, brain, threat)) {
+                return;
+            }
+
             if (combatPreset != null) {
                 manageCombatInventory(fakePlayer, combatPreset);
                 ItemEntity desiredPickup = findDesiredPickup(fakePlayer, combatPreset);
-                if (brain.healCooldownTicks > 0) {
-                    brain.healCooldownTicks--;
-                }
                 if (combatPreset.selfHealEnabled() && hasLowHealth(fakePlayer)) {
                     HealingChoice healingChoice = findBestHealingChoice(fakePlayer);
                     if (healingChoice != null) {
-                        if (threat != null) {
-                            moveAwayFromThreat(fakePlayer, threat, 0.52D);
-                        } else {
-                            dampHorizontalMotion(fakePlayer);
-                        }
-                        if (brain.healCooldownTicks <= 0 && useHealingChoice(fakePlayer, healingChoice)) {
-                            brain.healCooldownTicks = 20;
+                        if (brain.healCooldownTicks <= 0 && beginHealingSequence(fakePlayer, brain, healingChoice, threat != null)) {
+                            debug("Started scripted healing for {}", fakePlayer.getGameProfile().name());
                         }
                         return;
                     }
                     if (desiredPickup != null && isHealingPickup(desiredPickup.getItem())) {
                         prepareInventorySpaceFor(fakePlayer, desiredPickup.getItem(), combatPreset);
                         lookAtTarget(fakePlayer, desiredPickup);
-                        moveTowardTarget(fakePlayer, desiredPickup, 1.0D, 0.50D);
+                        moveTowardTarget(fakePlayer, desiredPickup, 1.0D, 0.95F, false, brain);
                         return;
                     }
                 }
                 if (desiredPickup != null) {
                     prepareInventorySpaceFor(fakePlayer, desiredPickup.getItem(), combatPreset);
                     lookAtTarget(fakePlayer, desiredPickup);
-                    moveTowardTarget(fakePlayer, desiredPickup, 1.0D, 0.50D);
+                    moveTowardTarget(fakePlayer, desiredPickup, 1.0D, 0.95F, false, brain);
                     return;
                 }
             }
@@ -1417,36 +1426,41 @@ public final class PlayerBatchService {
             }
 
             if (modes.contains(BotAiMode.FLEE) && threat != null) {
-                Vec3 away = fakePlayer.position().subtract(threat.position()).normalize().scale(0.35D);
-                fakePlayer.setDeltaMovement(away.x, Math.max(0.1D, fakePlayer.getDeltaMovement().y), away.z);
+                moveAwayFromThreat(fakePlayer, threat, 1.0F, brain);
                 return;
             }
 
             if (modes.contains(BotAiMode.COMBAT) && threat != null) {
-                lookAtTarget(fakePlayer, threat);
-                if (fakePlayer.distanceToSqr(threat) > 9.0D) {
-                    moveTowardTarget(fakePlayer, threat, 2.2D, 0.48D);
+                lookAtCombatTarget(fakePlayer, threat, combatPreset);
+                double reach = combatPreset == null ? 3.0D : combatPreset.reach();
+                double preferredDistance = combatPreset != null && combatPreset.stapEnabled()
+                        ? Math.max(1.8D, reach - 0.65D)
+                        : Math.max(1.6D, reach - 0.25D);
+                if (brain.attackRetreatTicks > 0 && combatPreset != null && combatPreset.stapEnabled()) {
+                    moveAwayFromThreat(fakePlayer, threat, 0.75F, brain);
+                } else if (horizontalDistance(fakePlayer, threat) > preferredDistance || Math.abs(threat.getY() - fakePlayer.getY()) > 1.25D) {
+                    moveTowardTarget(fakePlayer, threat, preferredDistance, 1.0F, combatPreset != null && combatPreset.stapEnabled(), brain);
                 } else {
-                    dampHorizontalMotion(fakePlayer);
-                    tryAttackTarget(fakePlayer, threat);
+                    stopActionMovement(fakePlayer, false);
+                    tryAttackTarget(fakePlayer, threat, brain, combatPreset);
                 }
                 return;
             }
 
             if (modes.contains(BotAiMode.FOLLOW) && followTarget != null) {
                 lookAtTarget(fakePlayer, followTarget);
-                moveTowardTarget(fakePlayer, followTarget, 2.5D, 0.44D);
+                moveTowardTarget(fakePlayer, followTarget, 2.5D, 0.9F, true, brain);
                 return;
             }
 
             if (modes.contains(BotAiMode.GUARD) && threat != null) {
                 lookAtTarget(fakePlayer, threat);
-                dampHorizontalMotion(fakePlayer);
+                stopActionMovement(fakePlayer, false);
                 return;
             }
 
             if (!modes.contains(BotAiMode.PATROL)) {
-                dampHorizontalMotion(fakePlayer);
+                stopActionMovement(fakePlayer, false);
             }
         }
 
@@ -1475,54 +1489,82 @@ public final class PlayerBatchService {
             source.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, target.position().add(0.0D, target.getEyeHeight(), 0.0D));
         }
 
-        private void moveTowardTarget(EntityPlayerMPFake source, Entity target, double preferredDistance, double speed) {
+        private EntityPlayerActionPack actionPack(EntityPlayerMPFake source) {
+            return ((ServerPlayerInterface) source).getActionPack();
+        }
+
+        private void lookAtCombatTarget(EntityPlayerMPFake source, Entity target, CombatPresetSpec combatPreset) {
             if (target == null) {
-                dampHorizontalMotion(source);
+                return;
+            }
+            lookAtTarget(source, target);
+            if (combatPreset != null && combatPreset.stapEnabled()) {
+                actionPack(source).turn(0.0F, 6.0F);
+            }
+        }
+
+        private void moveTowardTarget(EntityPlayerMPFake source, Entity target, double preferredDistance, float forwardPower, boolean cautiousAtEdges, BotBrain brain) {
+            if (target == null) {
+                stopActionMovement(source, false);
                 return;
             }
 
             Vec3 offset = target.position().subtract(source.position());
             double distance = offset.length();
             if (distance <= preferredDistance || distance < 0.001D) {
-                dampHorizontalMotion(source);
+                stopActionMovement(source, false);
                 return;
             }
 
             Vec3 horizontal = new Vec3(offset.x, 0.0D, offset.z);
             if (horizontal.lengthSqr() < 0.0001D) {
-                dampHorizontalMotion(source);
+                stopActionMovement(source, false);
                 return;
             }
 
-            if (!source.onGround()) {
-                source.setSprinting(false);
-                return;
+            EntityPlayerActionPack actionPack = actionPack(source);
+            lookAtTarget(source, target);
+            float desiredForward = Math.max(0.35F, Math.min(1.0F, forwardPower));
+            Vec3 motion = horizontal.normalize().scale(Math.max(0.2D, forwardPower));
+            boolean shouldJump = shouldJumpTowardTarget(source, target, motion, brain);
+            boolean shouldSneak = cautiousAtEdges && shouldSneakTowardTarget(source, target, motion);
+            actionPack.setSneaking(shouldSneak);
+            actionPack.setSprinting(distance > preferredDistance + 2.0D && !shouldSneak);
+            actionPack.setStrafing(brain.unstuckStrafeTicks > 0 ? brain.unstuckStrafeDirection * 0.7F : 0.0F);
+            actionPack.setForward(desiredForward);
+            if (shouldJump) {
+                actionPack.start(EntityPlayerActionPack.ActionType.JUMP, EntityPlayerActionPack.Action.once());
             }
-
-            Vec3 motion = horizontal.normalize().scale(speed);
-            boolean shouldJump = shouldJumpTowardTarget(source, target, motion);
-            boolean shouldSneak = shouldSneakTowardTarget(source, motion);
-            source.setShiftKeyDown(shouldSneak);
-            source.setSprinting(distance > preferredDistance + 2.5D && !shouldSneak);
-            source.setDeltaMovement(motion.x, shouldJump ? 0.42D : Math.max(0.0D, source.getDeltaMovement().y), motion.z);
+            updateStuckState(source, brain, true, target);
         }
 
-        private void dampHorizontalMotion(EntityPlayerMPFake source) {
-            source.setShiftKeyDown(false);
-            source.setSprinting(false);
-            source.setDeltaMovement(source.getDeltaMovement().multiply(0.35D, 1.0D, 0.35D));
+        private void stopActionMovement(EntityPlayerMPFake source, boolean stopUse) {
+            EntityPlayerActionPack actionPack = actionPack(source);
+            actionPack.setForward(0.0F);
+            actionPack.setStrafing(0.0F);
+            actionPack.setSneaking(false);
+            actionPack.setSprinting(false);
+            if (stopUse) {
+                actionPack.start(EntityPlayerActionPack.ActionType.USE, null);
+            }
         }
 
-        private void moveAwayFromThreat(EntityPlayerMPFake source, Entity threat, double speed) {
+        private void moveAwayFromThreat(EntityPlayerMPFake source, Entity threat, float backwardPower, BotBrain brain) {
             Vec3 away = source.position().subtract(threat.position());
             if (away.lengthSqr() < 0.0001D) {
-                dampHorizontalMotion(source);
+                stopActionMovement(source, false);
                 return;
             }
-            Vec3 horizontal = new Vec3(away.x, 0.0D, away.z).normalize().scale(speed);
-            source.setShiftKeyDown(false);
-            source.setSprinting(true);
-            source.setDeltaMovement(horizontal.x, Math.max(0.0D, source.getDeltaMovement().y), horizontal.z);
+            EntityPlayerActionPack actionPack = actionPack(source);
+            lookAtTarget(source, threat);
+            actionPack.setSneaking(false);
+            actionPack.setSprinting(false);
+            actionPack.setStrafing(brain.unstuckStrafeTicks > 0 ? brain.unstuckStrafeDirection * 0.5F : 0.0F);
+            actionPack.setForward(-Math.max(0.35F, Math.min(1.0F, backwardPower)));
+            if (shouldJumpTowardTarget(source, threat, away.normalize().scale(0.7D), brain)) {
+                actionPack.start(EntityPlayerActionPack.ActionType.JUMP, EntityPlayerActionPack.Action.once());
+            }
+            updateStuckState(source, brain, true, threat);
         }
 
         private boolean hasLowHealth(EntityPlayerMPFake fakePlayer) {
@@ -1740,17 +1782,145 @@ public final class PlayerBatchService {
             return currentBest;
         }
 
-        private boolean useHealingChoice(EntityPlayerMPFake fakePlayer, HealingChoice healingChoice) {
+        private boolean beginHealingSequence(EntityPlayerMPFake fakePlayer, BotBrain brain, HealingChoice healingChoice, boolean underThreat) {
+            if (brain.scriptedUse != null) {
+                return true;
+            }
+            ScriptedUseKind useKind = resolveHealingUseKind(fakePlayer, healingChoice);
+            InteractionHand hand = prepareHealingHand(fakePlayer, healingChoice);
+            ItemStack stack = hand == InteractionHand.OFF_HAND ? fakePlayer.getOffhandItem() : fakePlayer.getMainHandItem();
+            if (stack.isEmpty()) {
+                return false;
+            }
+            brain.scriptedUse = new ScriptedUseState(
+                    useKind,
+                    hand,
+                    stack.getCount(),
+                    underThreat ? 10 : 6,
+                    80
+            );
+            return true;
+        }
+
+        private ScriptedUseKind resolveHealingUseKind(EntityPlayerMPFake fakePlayer, HealingChoice healingChoice) {
             ItemStack stack = healingChoice.slot() == -2
                     ? fakePlayer.getOffhandItem()
                     : fakePlayer.getInventory().getItem(healingChoice.slot());
             if (stack.isEmpty()) {
-                return false;
+                return ScriptedUseKind.EAT;
             }
             return switch (healingChoice.kind()) {
-                case FOOD -> consumeFoodHealing(fakePlayer, stack, healingChoice);
-                case POTION -> consumePotionHealing(fakePlayer, stack, healingChoice);
+                case FOOD -> ScriptedUseKind.EAT;
+                case POTION -> (stack.is(Items.SPLASH_POTION) || stack.is(Items.LINGERING_POTION))
+                        ? ScriptedUseKind.THROW_POTION
+                        : ScriptedUseKind.DRINK;
             };
+        }
+
+        private boolean tickScriptedUse(EntityPlayerMPFake fakePlayer, BotBrain brain, LivingEntity threat) {
+            ScriptedUseState state = brain.scriptedUse;
+            if (state == null) {
+                return false;
+            }
+            if (state.timeoutTicks <= 0) {
+                finishScriptedUse(fakePlayer, brain, false);
+                return false;
+            }
+            state.timeoutTicks--;
+
+            EntityPlayerActionPack actionPack = actionPack(fakePlayer);
+            switch (state.kind) {
+                case THROW_POTION -> {
+                    if (state.phaseTicks > 4) {
+                        if (threat != null) {
+                            moveAwayFromThreat(fakePlayer, threat, 0.85F, brain);
+                        } else {
+                            actionPack.setForward(-0.65F);
+                            actionPack.setStrafing(0.0F);
+                            actionPack.setSneaking(false);
+                            actionPack.setSprinting(false);
+                        }
+                    } else {
+                        actionPack.setForward(0.0F);
+                        actionPack.setStrafing(0.0F);
+                        actionPack.setSneaking(true);
+                        actionPack.setSprinting(false);
+                        actionPack.look(fakePlayer.getYRot(), 70.0F);
+                    }
+                    if (state.phaseTicks == 4) {
+                        actionPack.start(EntityPlayerActionPack.ActionType.USE, EntityPlayerActionPack.Action.once());
+                    }
+                    state.phaseTicks--;
+                    if (state.phaseTicks <= 0) {
+                        finishScriptedUse(fakePlayer, brain, true);
+                    }
+                    return true;
+                }
+                case EAT, DRINK -> {
+                    if (state.phaseTicks > 0) {
+                        if (threat != null) {
+                            moveAwayFromThreat(fakePlayer, threat, 0.7F, brain);
+                        } else {
+                            actionPack.setForward(-0.45F);
+                            actionPack.setStrafing(0.0F);
+                            actionPack.setSneaking(false);
+                            actionPack.setSprinting(false);
+                        }
+                        state.phaseTicks--;
+                        if (state.phaseTicks == 0) {
+                            actionPack.start(EntityPlayerActionPack.ActionType.USE, EntityPlayerActionPack.Action.continuous());
+                        }
+                        return true;
+                    }
+
+                    actionPack.setForward(0.0F);
+                    actionPack.setStrafing(0.0F);
+                    actionPack.setSneaking(false);
+                    actionPack.setSprinting(false);
+                    if (state.kind == ScriptedUseKind.EAT) {
+                        actionPack.look(fakePlayer.getYRot(), 12.0F);
+                    } else {
+                        actionPack.look(fakePlayer.getYRot(), 2.0F);
+                    }
+                    if (hasConsumedHealingItem(fakePlayer, state) || (!fakePlayer.isUsingItem() && state.timeoutTicks < 70)) {
+                        finishScriptedUse(fakePlayer, brain, true);
+                    }
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private boolean hasConsumedHealingItem(EntityPlayerMPFake fakePlayer, ScriptedUseState state) {
+            ItemStack current = state.hand == InteractionHand.OFF_HAND ? fakePlayer.getOffhandItem() : fakePlayer.getMainHandItem();
+            return current.isEmpty() || current.getCount() < state.initialCount;
+        }
+
+        private void finishScriptedUse(EntityPlayerMPFake fakePlayer, BotBrain brain, boolean appliedCooldown) {
+            stopActionMovement(fakePlayer, true);
+            if (appliedCooldown && brain.scriptedUse != null) {
+                brain.healCooldownTicks = brain.scriptedUse.kind == ScriptedUseKind.THROW_POTION ? 16 : 24;
+            }
+            brain.scriptedUse = null;
+        }
+
+        private InteractionHand prepareHealingHand(EntityPlayerMPFake fakePlayer, HealingChoice healingChoice) {
+            if (healingChoice.slot() == -2) {
+                return InteractionHand.OFF_HAND;
+            }
+            EntityPlayerActionPack actionPack = actionPack(fakePlayer);
+            int slot = healingChoice.slot();
+            if (slot >= 0 && slot <= 8) {
+                actionPack.setSlot(slot + 1);
+                return InteractionHand.MAIN_HAND;
+            }
+            int selectedSlot = fakePlayer.getInventory().getSelectedSlot();
+            ItemStack selectedStack = fakePlayer.getInventory().getItem(selectedSlot).copy();
+            ItemStack healingStack = fakePlayer.getInventory().getItem(slot).copy();
+            fakePlayer.getInventory().setItem(selectedSlot, healingStack);
+            fakePlayer.getInventory().setItem(slot, selectedStack);
+            actionPack.setSlot(selectedSlot + 1);
+            return InteractionHand.MAIN_HAND;
         }
 
         private boolean consumeFoodHealing(EntityPlayerMPFake fakePlayer, ItemStack stack, HealingChoice healingChoice) {
@@ -1783,25 +1953,93 @@ public final class PlayerBatchService {
             }
         }
 
-        private void tryAttackTarget(EntityPlayerMPFake source, LivingEntity target) {
+        private void tryAttackTarget(EntityPlayerMPFake source, LivingEntity target, BotBrain brain, CombatPresetSpec combatPreset) {
+            double reach = combatPreset == null ? 3.0D : combatPreset.reach();
+            if (source.distanceToSqr(target) > reach * reach) {
+                return;
+            }
             if (source.getAttackStrengthScale(0.5F) < 0.92F) {
                 return;
             }
-            source.swing(source.getUsedItemHand(), true);
-            source.attack(target);
+            source.swing(InteractionHand.MAIN_HAND, true);
+            if (combatPreset != null && (!combatPreset.damageEnabled() || !combatPreset.fakeHitEnabled())) {
+                applyFakeHit(source, target);
+            } else {
+                source.attack(target);
+            }
             source.resetAttackStrengthTicker();
+            if (combatPreset != null && combatPreset.stapEnabled()) {
+                brain.attackRetreatTicks = 7;
+            }
         }
 
-        private boolean shouldJumpTowardTarget(EntityPlayerMPFake source, Entity target, Vec3 motion) {
+        private void applyFakeHit(EntityPlayerMPFake source, LivingEntity target) {
+            Vec3 push = target.position().subtract(source.position());
+            Vec3 horizontal = new Vec3(push.x, 0.0D, push.z);
+            if (horizontal.lengthSqr() < 0.0001D) {
+                horizontal = new Vec3(0.0D, 0.0D, 1.0D);
+            }
+            Vec3 normalized = horizontal.normalize();
+            target.knockback(0.45D, -normalized.x, -normalized.z);
+        }
+
+        private boolean shouldJumpTowardTarget(EntityPlayerMPFake source, Entity target, Vec3 motion, BotBrain brain) {
             BlockPos stepPos = BlockPos.containing(source.getX() + motion.x * 1.2D, source.getY(), source.getZ() + motion.z * 1.2D);
             boolean stepBlocked = source.level().getBlockState(stepPos).blocksMotion()
                     && !source.level().getBlockState(stepPos.above()).blocksMotion();
-            return target.getY() > source.getY() + 0.75D || stepBlocked;
+            if (stepBlocked) {
+                return true;
+            }
+            if (target.getY() > source.getY() + 0.75D) {
+                return true;
+            }
+            return brain.stuckTicks >= 8;
         }
 
-        private boolean shouldSneakTowardTarget(EntityPlayerMPFake source, Vec3 motion) {
+        private boolean shouldSneakTowardTarget(EntityPlayerMPFake source, Entity target, Vec3 motion) {
             BlockPos aheadBelow = BlockPos.containing(source.getX() + motion.x * 1.1D, source.getY() - 1.0D, source.getZ() + motion.z * 1.1D);
-            return source.level().getBlockState(aheadBelow).isAir();
+            if (!source.level().getBlockState(aheadBelow).isAir()) {
+                return false;
+            }
+            if (target.getY() < source.getY() - 0.4D) {
+                return false;
+            }
+            for (int fall = 2; fall <= 4; fall++) {
+                if (!source.level().getBlockState(aheadBelow.below(fall - 1)).isAir()) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private void updateStuckState(EntityPlayerMPFake source, BotBrain brain, boolean wantsMovement, Entity target) {
+            if (!wantsMovement) {
+                brain.stuckTicks = 0;
+                brain.unstuckStrafeTicks = 0;
+                brain.lastTrackedPosition = source.position();
+                return;
+            }
+            if (brain.lastTrackedPosition != null && source.position().distanceToSqr(brain.lastTrackedPosition) < 0.01D) {
+                brain.stuckTicks++;
+            } else {
+                brain.stuckTicks = 0;
+            }
+            if (brain.unstuckStrafeTicks > 0) {
+                brain.unstuckStrafeTicks--;
+            } else if (brain.stuckTicks >= 8) {
+                brain.unstuckStrafeDirection *= -1.0F;
+                brain.unstuckStrafeTicks = 8;
+                if (target != null) {
+                    lookAtTarget(source, target);
+                }
+            }
+            brain.lastTrackedPosition = source.position();
+        }
+
+        private double horizontalDistance(EntityPlayerMPFake source, Entity target) {
+            double dx = target.getX() - source.getX();
+            double dz = target.getZ() - source.getZ();
+            return Math.sqrt(dx * dx + dz * dz);
         }
 
         private void debug(String pattern, Object... args) {
@@ -2425,6 +2663,40 @@ public final class PlayerBatchService {
         private String groupKey;
         private CombatPresetSpec combatPreset;
         private int healCooldownTicks;
+        private int attackRetreatTicks;
+        private int stuckTicks;
+        private int unstuckStrafeTicks;
+        private float unstuckStrafeDirection = 1.0F;
+        private Vec3 lastTrackedPosition;
+        private ScriptedUseState scriptedUse;
+    }
+
+    private enum ScriptedUseKind {
+        EAT,
+        DRINK,
+        THROW_POTION
+    }
+
+    private static final class ScriptedUseState {
+        private final ScriptedUseKind kind;
+        private final InteractionHand hand;
+        private final int initialCount;
+        private int phaseTicks;
+        private int timeoutTicks;
+
+        private ScriptedUseState(
+                ScriptedUseKind kind,
+                InteractionHand hand,
+                int initialCount,
+                int phaseTicks,
+                int timeoutTicks
+        ) {
+            this.kind = kind;
+            this.hand = hand;
+            this.initialCount = initialCount;
+            this.phaseTicks = phaseTicks;
+            this.timeoutTicks = timeoutTicks;
+        }
     }
 
     private record ArmorEvaluation(int materialScore, boolean enchanted, ItemStack stack) {
