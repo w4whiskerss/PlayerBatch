@@ -128,7 +128,7 @@ public final class PlayerBatchScreen extends Screen {
         }
 
         countBox = addBox(left, top + 52, countWidth, preferences.summonCount(), this::refreshSummonState);
-        namesBox = addBox(namesLeft, top + 52, namesWidth, preferences.summonNames(), value -> {
+        namesBox = addBox(namesLeft, top + 52, namesWidth, preferences.summonNames(), 32767, value -> {
             autoGrowCount();
             refreshSummonState(value);
         });
@@ -290,6 +290,12 @@ public final class PlayerBatchScreen extends Screen {
         EditBox box = addRenderableWidget(new EditBox(font, x, y, width, 20, Component.empty()));
         box.setValue(value == null ? "" : value);
         box.setResponder(responder);
+        return box;
+    }
+
+    private EditBox addBox(int x, int y, int width, String value, int maxLength, java.util.function.Consumer<String> responder) {
+        EditBox box = addBox(x, y, width, value, responder);
+        box.setMaxLength(maxLength);
         return box;
     }
 
