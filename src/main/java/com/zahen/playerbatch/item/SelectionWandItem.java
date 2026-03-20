@@ -15,7 +15,7 @@ public final class SelectionWandItem {
     }
 
     public static ItemStack create() {
-        ItemStack stack = new ItemStack(Items.BLAZE_ROD);
+        ItemStack stack = new ItemStack(Items.STICK);
         stack.set(DataComponents.CUSTOM_NAME, Component.literal("PlayerBatch Wand").withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD));
         CompoundTag tag = new CompoundTag();
         tag.putBoolean(TAG_KEY, true);

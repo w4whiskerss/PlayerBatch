@@ -462,10 +462,10 @@ public final class PlayerBatchService {
     }
 
     public static boolean toggleSelection(ServerPlayer actor, Entity entity) {
-        if (!isManagedBot(entity)) {
+        EntityPlayerMPFake fakePlayer = resolveManagedBot(actor.createCommandSourceStack().getServer(), entity);
+        if (fakePlayer == null) {
             return false;
         }
-        EntityPlayerMPFake fakePlayer = (EntityPlayerMPFake) entity;
 
         boolean selected = state(actor.createCommandSourceStack().getServer()).toggleSelection(fakePlayer);
         actor.displayClientMessage(
@@ -518,8 +518,16 @@ public final class PlayerBatchService {
         return SERVER_STATES.computeIfAbsent(server, ServerState::new);
     }
 
-    private static boolean isManagedBot(Entity entity) {
-        return entity instanceof EntityPlayerMPFake fakePlayer && fakePlayer.getTags().contains(BOT_TAG);
+    private static EntityPlayerMPFake resolveManagedBot(MinecraftServer server, Entity entity) {
+        if (!(entity instanceof EntityPlayerMPFake fakePlayer) || server == null) {
+            return null;
+        }
+        ServerState serverState = state(server);
+        if (!serverState.isManagedBot(fakePlayer)) {
+            return null;
+        }
+        serverState.ensureBotTag(fakePlayer);
+        return fakePlayer;
     }
 
     private static Direction parseDirection(String directionName) {
@@ -598,6 +606,13 @@ public final class PlayerBatchService {
         return rawId.contains(":") ? rawId.trim().toLowerCase(Locale.ROOT) : "minecraft:" + rawId.trim().toLowerCase(Locale.ROOT);
     }
 
+    private static String normalizePlayerName(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        return name.trim().toLowerCase(Locale.ROOT);
+    }
+
     public record PlayerBatchSnapshot(
             boolean openScreen,
             int maxSummonCount,
@@ -627,6 +642,8 @@ public final class PlayerBatchService {
         private final Set<UUID> subscribers = new LinkedHashSet<>();
         private final Map<String, BotGroup> groups = new LinkedHashMap<>();
         private final Map<UUID, BotBrain> brains = new HashMap<>();
+        private final Set<UUID> managedBotIds = new LinkedHashSet<>();
+        private final Set<String> managedBotNames = new LinkedHashSet<>();
         private SummonBatch activeBatch;
         private int syncCooldown;
         private int aiTickCooldown;
@@ -646,7 +663,7 @@ public final class PlayerBatchService {
                 uniqueNames.add(uniqueName);
                 reservedNames.add(uniqueName);
             }
-            queue.addLast(new SummonBatch(server, source, uniqueNames, formation));
+            queue.addLast(new SummonBatch(this, server, source, uniqueNames, formation));
             debug("Queued summon batch with {} names using {} formation", uniqueNames.size(), formation);
             broadcast(false);
             return uniqueNames.size();
@@ -712,8 +729,8 @@ public final class PlayerBatchService {
         private int selectAll() {
             int count = 0;
             for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-                if (isManagedBot(player)) {
-                    EntityPlayerMPFake fakePlayer = (EntityPlayerMPFake) player;
+                if (player instanceof EntityPlayerMPFake fakePlayer && isManagedBot(fakePlayer)) {
+                    ensureBotTag(fakePlayer);
                     if (selectedIds.add(fakePlayer.getUUID())) {
                         applySelectionGlow(fakePlayer);
                     } else {
@@ -896,10 +913,37 @@ public final class PlayerBatchService {
 
         private List<EntityPlayerMPFake> fakePlayers() {
             return server.getPlayerList().getPlayers().stream()
-                    .filter(PlayerBatchService::isManagedBot)
+                    .filter(player -> player instanceof EntityPlayerMPFake fakePlayer && isManagedBot(fakePlayer))
                     .map(player -> (EntityPlayerMPFake) player)
                     .filter(Objects::nonNull)
                     .toList();
+        }
+
+        private boolean isManagedBot(EntityPlayerMPFake fakePlayer) {
+            return fakePlayer.getTags().contains(BOT_TAG)
+                    || managedBotIds.contains(fakePlayer.getUUID())
+                    || managedBotNames.contains(normalizePlayerName(fakePlayer.getGameProfile().name()));
+        }
+
+        private void markManagedName(String name) {
+            String normalized = normalizePlayerName(name);
+            if (normalized != null) {
+                managedBotNames.add(normalized);
+            }
+        }
+
+        private void markManagedBot(EntityPlayerMPFake fakePlayer) {
+            managedBotIds.add(fakePlayer.getUUID());
+            markManagedName(fakePlayer.getGameProfile().name());
+            ensureBotTag(fakePlayer);
+        }
+
+        private void ensureBotTag(EntityPlayerMPFake fakePlayer) {
+            if (!fakePlayer.getTags().contains(BOT_TAG)) {
+                fakePlayer.addTag(BOT_TAG);
+            }
+            managedBotIds.add(fakePlayer.getUUID());
+            markManagedName(fakePlayer.getGameProfile().name());
         }
 
         private GroupResult createGroup(String rawName) {
@@ -1079,16 +1123,23 @@ public final class PlayerBatchService {
             subscribers.clear();
             groups.clear();
             brains.clear();
+            managedBotIds.clear();
+            managedBotNames.clear();
             queue.clear();
         }
 
         private void cleanupGroupsAndBrains() {
             Set<UUID> liveBots = new HashSet<>();
+            Set<String> liveNames = new HashSet<>();
             for (EntityPlayerMPFake fakePlayer : fakePlayers()) {
+                ensureBotTag(fakePlayer);
                 liveBots.add(fakePlayer.getUUID());
+                liveNames.add(normalizePlayerName(fakePlayer.getGameProfile().name()));
                 ensureBrain(fakePlayer);
             }
             brains.keySet().removeIf(id -> !liveBots.contains(id));
+            managedBotIds.retainAll(liveBots);
+            managedBotNames.retainAll(liveNames);
             for (BotGroup group : groups.values()) {
                 group.memberIds().removeIf(id -> !liveBots.contains(id));
             }
@@ -1169,6 +1220,7 @@ public final class PlayerBatchService {
     }
 
     private static final class SummonBatch {
+        private final ServerState owner;
         private final MinecraftServer server;
         private final CommandSourceStack feedbackSource;
         private final CommandSourceStack executionSource;
@@ -1181,7 +1233,8 @@ public final class PlayerBatchService {
         private int successCount;
         private int failCount;
 
-        private SummonBatch(MinecraftServer server, CommandSourceStack source, List<String> names, String formation) {
+        private SummonBatch(ServerState owner, MinecraftServer server, CommandSourceStack source, List<String> names, String formation) {
+            this.owner = owner;
             this.server = server;
             this.feedbackSource = source;
             this.executionSource = source.withSuppressedOutput();
@@ -1223,9 +1276,10 @@ public final class PlayerBatchService {
                 boolean accepted = CommandCompat.performPrefixedCommand(executionSource, command);
                 ServerPlayer spawnedPlayer = server.getPlayerList().getPlayerByName(nextName);
                 if (accepted || spawnedPlayer != null) {
+                    owner.markManagedName(nextName);
                     successCount++;
-                    if (spawnedPlayer != null) {
-                        spawnedPlayer.addTag(BOT_TAG);
+                    if (spawnedPlayer instanceof EntityPlayerMPFake fakePlayer) {
+                        owner.markManagedBot(fakePlayer);
                     } else {
                         pendingTagNames.add(nextName);
                     }
@@ -1244,8 +1298,8 @@ public final class PlayerBatchService {
             List<String> tagged = new ArrayList<>();
             for (String pendingName : pendingTagNames) {
                 ServerPlayer queuedPlayer = server.getPlayerList().getPlayerByName(pendingName);
-                if (queuedPlayer != null) {
-                    queuedPlayer.addTag(BOT_TAG);
+                if (queuedPlayer instanceof EntityPlayerMPFake fakePlayer) {
+                    owner.markManagedBot(fakePlayer);
                     tagged.add(pendingName);
                 }
             }
