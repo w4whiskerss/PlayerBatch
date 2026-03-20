@@ -13,9 +13,11 @@ import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 
@@ -49,6 +51,24 @@ public class PlayerBatchScreen extends Screen {
             "look up",
             "look down"
     );
+    private static final List<String> SLOT_OPTIONS = List.of("head", "chest", "legs", "feet", "mainhand", "offhand");
+    private static final List<String> DIRECTION_OPTIONS = List.of("up", "below", "north", "south", "east", "west");
+    private static final List<String> ITEM_OPTIONS = BuiltInRegistries.ITEM.keySet().stream()
+            .map(Object::toString)
+            .sorted()
+            .toList();
+    private static final List<String> EFFECT_OPTIONS = BuiltInRegistries.MOB_EFFECT.keySet().stream()
+            .map(Object::toString)
+            .sorted()
+            .toList();
+    private static final List<String> BLOCK_OPTIONS = BuiltInRegistries.BLOCK.keySet().stream()
+            .map(Object::toString)
+            .sorted()
+            .toList();
+    private static final List<String> AI_MODE_OPTIONS = List.of(BotAiMode.values()).stream()
+            .map(BotAiMode::displayName)
+            .sorted()
+            .toList();
 
     private Tab activeTab = Tab.SUMMONING;
     private PlayerBatchService.PlayerBatchSnapshot snapshot;
@@ -183,10 +203,16 @@ public class PlayerBatchScreen extends Screen {
         register(addRenderableWidget(Button.builder(Component.literal("Clear Selection"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.CLEAR_SELECTION, "", "", 0, false
         ))).bounds(left, top + 44, 120, 20).build()), customizationWidgets);
+        register(addRenderableWidget(Button.builder(Component.literal("Complete Focus"), button -> completeFocusedAutocomplete())
+                .bounds(left + 126, top + 44, 120, 20).build()), customizationWidgets);
 
         groupBox = register(addRenderableWidget(new EditBox(font, left, top + 88, 120, 20, Component.literal("Group"))), customizationWidgets);
         groupBox.setValue(preferences.groupName());
-        groupBox.setResponder(value -> savePreferences());
+        groupBox.setResponder(value -> {
+            updateAutocomplete(groupBox, currentGroupOptions());
+            savePreferences();
+        });
+        updateAutocomplete(groupBox, currentGroupOptions());
         register(addRenderableWidget(Button.builder(Component.literal("Create"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.CREATE_GROUP, groupBox.getValue(), "", 0, false
         ))).bounds(left + 126, top + 88, 70, 20).build()), customizationWidgets);
@@ -199,7 +225,11 @@ public class PlayerBatchScreen extends Screen {
 
         aiModeBox = register(addRenderableWidget(new EditBox(font, left, top + 132, 120, 20, Component.literal("AI Mode"))), customizationWidgets);
         aiModeBox.setValue(preferences.aiMode());
-        aiModeBox.setResponder(value -> savePreferences());
+        aiModeBox.setResponder(value -> {
+            updateAutocomplete(aiModeBox, AI_MODE_OPTIONS);
+            savePreferences();
+        });
+        updateAutocomplete(aiModeBox, AI_MODE_OPTIONS);
         register(addRenderableWidget(Button.builder(Component.literal("Set Selected AI"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SET_SELECTED_AI, aiModeBox.getValue(), "", 0, false
         ))).bounds(left + 126, top + 132, 112, 20).build()), customizationWidgets);
@@ -209,10 +239,18 @@ public class PlayerBatchScreen extends Screen {
 
         slotBox = register(addRenderableWidget(new EditBox(font, left, top + 176, 70, 20, Component.literal("Slot"))), customizationWidgets);
         slotBox.setValue(preferences.itemSlot());
-        slotBox.setResponder(value -> savePreferences());
+        slotBox.setResponder(value -> {
+            updateAutocomplete(slotBox, SLOT_OPTIONS);
+            savePreferences();
+        });
+        updateAutocomplete(slotBox, SLOT_OPTIONS);
         itemBox = register(addRenderableWidget(new EditBox(font, left + 76, top + 176, 120, 20, Component.literal("Item"))), customizationWidgets);
         itemBox.setValue(preferences.itemId());
-        itemBox.setResponder(value -> savePreferences());
+        itemBox.setResponder(value -> {
+            updateAutocomplete(itemBox, ITEM_OPTIONS);
+            savePreferences();
+        });
+        updateAutocomplete(itemBox, ITEM_OPTIONS);
         itemCountBox = register(addRenderableWidget(new EditBox(font, left + 202, top + 176, 40, 20, Component.literal("Count"))), customizationWidgets);
         itemCountBox.setValue(preferences.itemCount());
         itemCountBox.setResponder(value -> savePreferences());
@@ -222,7 +260,11 @@ public class PlayerBatchScreen extends Screen {
 
         effectBox = register(addRenderableWidget(new EditBox(font, left, top + 202, 120, 20, Component.literal("Effect"))), customizationWidgets);
         effectBox.setValue(preferences.effectId());
-        effectBox.setResponder(value -> savePreferences());
+        effectBox.setResponder(value -> {
+            updateAutocomplete(effectBox, EFFECT_OPTIONS);
+            savePreferences();
+        });
+        updateAutocomplete(effectBox, EFFECT_OPTIONS);
         effectDurationBox = register(addRenderableWidget(new EditBox(font, left + 126, top + 202, 54, 20, Component.literal("Secs"))), customizationWidgets);
         effectDurationBox.setValue(preferences.effectDuration());
         effectDurationBox.setResponder(value -> savePreferences());
@@ -236,19 +278,10 @@ public class PlayerBatchScreen extends Screen {
         actionBox = register(addRenderableWidget(new EditBox(font, left, top + 228, 180, 20, Component.literal("Action"))), customizationWidgets);
         actionBox.setValue(preferences.action());
         actionBox.setResponder(value -> {
-            updateActionAutocomplete();
+            updateAutocomplete(actionBox, ACTION_OPTIONS);
             savePreferences();
         });
-        updateActionAutocomplete();
-        register(addRenderableWidget(Button.builder(Component.literal("Complete"), button -> {
-            String completion = currentActionCompletion();
-            if (completion != null) {
-                actionBox.setValue(completion);
-                actionBox.moveCursorToEnd(false);
-                updateActionAutocomplete();
-                savePreferences();
-            }
-        }).bounds(left + 186, top + 228, 92, 20).build()), customizationWidgets);
+        updateAutocomplete(actionBox, ACTION_OPTIONS);
         register(addRenderableWidget(Button.builder(Component.literal("Run Action"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.RUN_ACTION, actionBox.getValue(), "", 0, false
         ))).bounds(left + 284, top + 228, 102, 20).build()), customizationWidgets);
@@ -258,10 +291,18 @@ public class PlayerBatchScreen extends Screen {
 
         directionBox = register(addRenderableWidget(new EditBox(font, left, top + 254, 84, 20, Component.literal("Direction"))), customizationWidgets);
         directionBox.setValue(preferences.direction());
-        directionBox.setResponder(value -> savePreferences());
+        directionBox.setResponder(value -> {
+            updateAutocomplete(directionBox, DIRECTION_OPTIONS);
+            savePreferences();
+        });
+        updateAutocomplete(directionBox, DIRECTION_OPTIONS);
         blockBox = register(addRenderableWidget(new EditBox(font, left + 90, top + 254, 100, 20, Component.literal("Block"))), customizationWidgets);
         blockBox.setValue(preferences.block());
-        blockBox.setResponder(value -> savePreferences());
+        blockBox.setResponder(value -> {
+            updateAutocomplete(blockBox, BLOCK_OPTIONS);
+            savePreferences();
+        });
+        updateAutocomplete(blockBox, BLOCK_OPTIONS);
         register(addRenderableWidget(Button.builder(Component.literal("Teleport Selected"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.TELEPORT_SELECTION, directionBox.getValue(), blockBox.getValue(), 0, false
         ))).bounds(left + 196, top + 280, 126, 20).build()), customizationWidgets);
@@ -295,6 +336,7 @@ public class PlayerBatchScreen extends Screen {
         if (formationButton != null) {
             formationButton.setMessage(formationLabel());
         }
+        refreshAutocompleteSuggestions();
     }
 
     @Override
@@ -341,7 +383,8 @@ public class PlayerBatchScreen extends Screen {
         guiGraphics.drawString(font, "Selection, groups, AI mode assignment, item/armor editing, effects, and teleport controls.", left, top + 68, 0xC3CED7);
         guiGraphics.drawString(font, "Supported AI modes: idle, combat, patrol, guard, follow, flee", left, top + 156, 0x9BE5B8);
         guiGraphics.drawString(font, "Item slots: head, chest, legs, feet, mainhand, offhand", left, top + 172, 0x9BE5B8);
-        guiGraphics.drawString(font, "Action autocomplete: type a command and use the Complete button for the current suggestion.", left, top + 188, 0x9BE5B8);
+        guiGraphics.drawString(font, "Autocomplete works for group, AI, slot, item, effect, action, direction, and block fields.", left, top + 188, 0x9BE5B8);
+        guiGraphics.drawString(font, "Use Complete Focus to accept the suggestion for the text box you're editing.", left, top + 204, 0x9BE5B8);
         guiGraphics.drawString(font, "Groups: " + (snapshot.groups().isEmpty() ? "none yet" : String.join(" | ", snapshot.groups())), left, top + 290, 0xA8E8D2);
         guiGraphics.drawString(font, "Selected bots (" + snapshot.selectedNames().size() + "): " + selectedSummary(), left, top + 306, 0xBFD7E6);
         guiGraphics.drawString(font, "Full inventory pages, enchant editing, and wand area selection are still pending backend implementation.", left, top + 322, 0xE8C89C);
@@ -456,43 +499,90 @@ public class PlayerBatchScreen extends Screen {
         return summary;
     }
 
-    private void updateActionAutocomplete() {
-        if (actionBox == null) {
-            return;
-        }
-        String completion = currentActionCompletion();
-        if (completion == null) {
-            actionBox.setSuggestion(null);
-            return;
-        }
-        String currentValue = actionBox.getValue();
-        if (completion.equals(currentValue)) {
-            actionBox.setSuggestion(null);
-            return;
-        }
-        actionBox.setSuggestion(completion.substring(Math.min(currentValue.length(), completion.length())));
+    private void refreshAutocompleteSuggestions() {
+        updateAutocomplete(groupBox, currentGroupOptions());
+        updateAutocomplete(aiModeBox, AI_MODE_OPTIONS);
+        updateAutocomplete(slotBox, SLOT_OPTIONS);
+        updateAutocomplete(itemBox, ITEM_OPTIONS);
+        updateAutocomplete(effectBox, EFFECT_OPTIONS);
+        updateAutocomplete(actionBox, ACTION_OPTIONS);
+        updateAutocomplete(directionBox, DIRECTION_OPTIONS);
+        updateAutocomplete(blockBox, BLOCK_OPTIONS);
     }
 
-    private String currentActionCompletion() {
-        if (actionBox == null) {
+    private void updateAutocomplete(EditBox box, Collection<String> options) {
+        if (box == null) {
+            return;
+        }
+        String completion = autocompleteValue(box.getValue(), options);
+        if (completion == null) {
+            box.setSuggestion(null);
+            return;
+        }
+        String currentValue = box.getValue();
+        if (completion.equalsIgnoreCase(currentValue)) {
+            box.setSuggestion(null);
+            return;
+        }
+        box.setSuggestion(completion.substring(Math.min(currentValue.length(), completion.length())));
+    }
+
+    private void completeFocusedAutocomplete() {
+        completeBox(groupBox, currentGroupOptions());
+        completeBox(aiModeBox, AI_MODE_OPTIONS);
+        completeBox(slotBox, SLOT_OPTIONS);
+        completeBox(itemBox, ITEM_OPTIONS);
+        completeBox(effectBox, EFFECT_OPTIONS);
+        completeBox(actionBox, ACTION_OPTIONS);
+        completeBox(directionBox, DIRECTION_OPTIONS);
+        completeBox(blockBox, BLOCK_OPTIONS);
+    }
+
+    private void completeBox(EditBox box, Collection<String> options) {
+        if (box == null || !box.isFocused()) {
+            return;
+        }
+        String completion = autocompleteValue(box.getValue(), options);
+        if (completion == null) {
+            return;
+        }
+        box.setValue(completion);
+        box.moveCursorToEnd(false);
+        updateAutocomplete(box, options);
+        savePreferences();
+    }
+
+    private String autocompleteValue(String currentValue, Collection<String> options) {
+        if (options == null || options.isEmpty()) {
             return null;
         }
-        String currentValue = actionBox.getValue();
         String normalized = currentValue == null ? "" : currentValue.trim().toLowerCase(Locale.ROOT);
         if (normalized.isEmpty()) {
-            return ACTION_OPTIONS.get(0);
+            return options.iterator().next();
         }
-        for (String option : ACTION_OPTIONS) {
-            if (option.startsWith(normalized)) {
+        for (String option : options) {
+            if (option.toLowerCase(Locale.ROOT).startsWith(normalized)) {
                 return option;
             }
         }
-        for (String option : ACTION_OPTIONS) {
-            if (option.contains(normalized)) {
+        for (String option : options) {
+            if (option.toLowerCase(Locale.ROOT).contains(normalized)) {
                 return option;
             }
         }
         return null;
+    }
+
+    private List<String> currentGroupOptions() {
+        if (snapshot == null || snapshot.groups().isEmpty()) {
+            return List.of();
+        }
+        List<String> groups = new ArrayList<>();
+        for (String summary : snapshot.groups()) {
+            int equalsIndex = summary.indexOf('=');
+            groups.add((equalsIndex >= 0 ? summary.substring(0, equalsIndex) : summary).trim());
+        }
+        return groups;
     }
 
     private int parseInt(String raw, int fallback) {
