@@ -42,6 +42,15 @@ dependencies {
     modCompileOnly "com.terraformersmc:modmenu:17.0.0-beta.1"
 }
 
+loom {
+    runs {
+        client {
+            programArg "--username"
+            programArg "WhiskersDev"
+        }
+    }
+}
+
 processResources {
     inputs.property "version", project.version
     inputs.property "minecraft_dependency", minecraftDependency
