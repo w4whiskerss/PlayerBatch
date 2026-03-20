@@ -435,6 +435,13 @@ public final class PlayerBatchService {
         state(player.createCommandSourceStack().getServer()).removeSubscriber(player.getUUID());
     }
 
+    public static void handlePlayerDisconnect(ServerPlayer player) {
+        if (player == null || player.createCommandSourceStack().getServer() == null) {
+            return;
+        }
+        state(player.createCommandSourceStack().getServer()).handlePlayerDisconnect(player);
+    }
+
     public static void requestState(ServerPlayer player, boolean openScreen) {
         state(player.createCommandSourceStack().getServer()).addSubscriber(player.getUUID());
         PlayerBatchNetworking.sendState(player, snapshot(player.createCommandSourceStack().getServer(), openScreen));
@@ -1016,6 +1023,19 @@ public final class PlayerBatchService {
             ensureBotTag(fakePlayer);
         }
 
+        private void forgetManagedBot(EntityPlayerMPFake fakePlayer) {
+            selectedIds.remove(fakePlayer.getUUID());
+            brains.remove(fakePlayer.getUUID());
+            managedBotIds.remove(fakePlayer.getUUID());
+            String normalized = normalizePlayerName(fakePlayer.getGameProfile().name());
+            if (normalized != null) {
+                managedBotNames.remove(normalized);
+            }
+            for (BotGroup group : groups.values()) {
+                group.memberIds().remove(fakePlayer.getUUID());
+            }
+        }
+
         private void ensureBotTag(EntityPlayerMPFake fakePlayer) {
             if (!fakePlayer.getTags().contains(BOT_TAG)) {
                 fakePlayer.addTag(BOT_TAG);
@@ -1145,6 +1165,15 @@ public final class PlayerBatchService {
 
         private void removeSubscriber(UUID subscriber) {
             subscribers.remove(subscriber);
+        }
+
+        private void handlePlayerDisconnect(ServerPlayer player) {
+            subscribers.remove(player.getUUID());
+            if (player instanceof EntityPlayerMPFake fakePlayer && isManagedBot(fakePlayer)) {
+                cleanupManagedBot(fakePlayer);
+                forgetManagedBot(fakePlayer);
+            }
+            broadcast(false);
         }
 
         private int queueDepth() {
