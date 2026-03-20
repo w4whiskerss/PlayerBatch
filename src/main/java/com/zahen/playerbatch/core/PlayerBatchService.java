@@ -18,6 +18,8 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
+import net.minecraft.network.protocol.game.ClientboundRotateHeadPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerBossEvent;
@@ -1217,6 +1219,8 @@ public final class PlayerBatchService {
             brain.healCooldownTicks = 0;
             brain.attackRetreatTicks = 0;
             brain.flexSpinTicks = 0;
+            brain.flexSpinDirection = 1;
+            brain.flexSpinProgress = 0.0F;
             brain.stuckTicks = 0;
             brain.scriptedUse = null;
             stopActionMovement(fakePlayer, true);
@@ -1392,6 +1396,8 @@ public final class PlayerBatchService {
             }
             if (brain.flexSpinTicks > 0) {
                 brain.flexSpinTicks--;
+            } else if (brain.flexSpinProgress != 0.0F) {
+                brain.flexSpinProgress = 0.0F;
             }
             if (tickScriptedUse(fakePlayer, brain, threat)) {
                 return;
@@ -1581,7 +1587,13 @@ public final class PlayerBatchService {
             actionPack.setSprinting(false);
             actionPack.setForward(0.0F);
             actionPack.setStrafing(0.0F);
-            applyVisibleYawSpin(source, 45.0F);
+            float yawDelta = 45.0F * brain.flexSpinDirection;
+            applyVisibleYawSpin(source, yawDelta);
+            brain.flexSpinProgress += yawDelta;
+            if (Math.abs(brain.flexSpinProgress) >= 360.0F) {
+                brain.flexSpinProgress = 0.0F;
+                brain.flexSpinDirection *= -1;
+            }
             updateStuckState(source, brain, true, target);
         }
 
@@ -1593,6 +1605,11 @@ public final class PlayerBatchService {
             source.yHeadRotO = spunYaw;
             source.yBodyRot = spunYaw;
             source.yBodyRotO = spunYaw;
+            ServerLevel level = (ServerLevel) source.level();
+            byte headYaw = (byte) Math.floor(spunYaw * 256.0F / 360.0F);
+            byte pitch = (byte) Math.floor(source.getXRot() * 256.0F / 360.0F);
+            level.getServer().getPlayerList().broadcastAll(new ClientboundMoveEntityPacket.Rot(source.getId(), headYaw, pitch, source.onGround()), level.dimension());
+            level.getServer().getPlayerList().broadcastAll(new ClientboundRotateHeadPacket(source, headYaw), level.dimension());
         }
 
         private boolean hasLowHealth(EntityPlayerMPFake fakePlayer) {
@@ -2001,7 +2018,7 @@ public final class PlayerBatchService {
                 moveAwayFromThreat(source, target, 1.0F, brain);
             }
             if (combatPreset != null && combatPreset.flex360Enabled()) {
-                brain.flexSpinTicks = 8;
+                brain.flexSpinTicks = Integer.MAX_VALUE;
             }
         }
 
@@ -2697,6 +2714,8 @@ public final class PlayerBatchService {
         private int healCooldownTicks;
         private int attackRetreatTicks;
         private int flexSpinTicks;
+        private int flexSpinDirection = 1;
+        private float flexSpinProgress;
         private int stuckTicks;
         private int unstuckStrafeTicks;
         private float unstuckStrafeDirection = 1.0F;
