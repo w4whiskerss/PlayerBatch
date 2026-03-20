@@ -212,6 +212,34 @@ public final class PlayerBatchService {
         return affected;
     }
 
+    public static int runSelectedActionSet(CommandSourceStack source, String rawActions) {
+        if (rawActions == null || rawActions.isBlank()) {
+            source.sendFailure(Component.literal("No action set was provided."));
+            return 0;
+        }
+        int bestAffected = 0;
+        int commandsRun = 0;
+        for (String action : rawActions.split("\\R+")) {
+            String trimmed = action.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            int affected = state(source.getServer()).runAction(source, trimmed);
+            if (affected > 0) {
+                bestAffected = Math.max(bestAffected, affected);
+                commandsRun++;
+            }
+        }
+        if (commandsRun <= 0) {
+            source.sendFailure(Component.literal("No selected fake players matched that action set."));
+            return 0;
+        }
+        int finalBestAffected = bestAffected;
+        int finalCommandsRun = commandsRun;
+        source.sendSuccess(() -> Component.literal("Ran " + finalCommandsRun + " action command" + suffix(finalCommandsRun) + " across " + finalBestAffected + " selected bot" + suffix(finalBestAffected) + "."), true);
+        return finalBestAffected;
+    }
+
     public static int teleportSelection(CommandSourceStack source, String directionName, String blockName) {
         Direction direction = parseDirection(directionName);
         if (direction == null) {
@@ -251,6 +279,26 @@ public final class PlayerBatchService {
             return 0;
         }
         source.sendSuccess(() -> Component.literal("Applied item to " + affected + " selected bot" + suffix(affected) + "."), true);
+        return affected;
+    }
+
+    public static int applySelectedHotbarSlot(CommandSourceStack source, int slotIndex, String rawItem, int count) {
+        Item item = parseItem(rawItem);
+        if (item == null) {
+            source.sendFailure(Component.literal("Unknown item: " + rawItem));
+            return 0;
+        }
+        if (slotIndex < 0 || slotIndex > 8) {
+            source.sendFailure(Component.literal("Hotbar slot must be between 1 and 9."));
+            return 0;
+        }
+        int affected = state(source.getServer()).applySelectedHotbarSlot(slotIndex, item, count);
+        if (affected <= 0) {
+            source.sendFailure(Component.literal("No selected managed bots were available to edit."));
+            return 0;
+        }
+        int displaySlot = slotIndex + 1;
+        source.sendSuccess(() -> Component.literal("Applied item to hotbar slot " + displaySlot + " for " + affected + " selected bot" + suffix(affected) + "."), true);
         return affected;
     }
 
@@ -410,6 +458,10 @@ public final class PlayerBatchService {
         runSelectedAction(player.createCommandSourceStack(), action);
     }
 
+    public static void runSelectedActionSetFromGui(ServerPlayer player, String actions) {
+        runSelectedActionSet(player.createCommandSourceStack(), actions);
+    }
+
     public static void teleportSelectionFromGui(ServerPlayer player, String direction, String blockName) {
         teleportSelection(player.createCommandSourceStack(), direction, blockName);
     }
@@ -456,6 +508,10 @@ public final class PlayerBatchService {
 
     public static void applySelectedItemFromGui(ServerPlayer player, String slot, String item, int count) {
         applySelectedItem(player.createCommandSourceStack(), slot, item, count);
+    }
+
+    public static void applySelectedHotbarSlotFromGui(ServerPlayer player, int slotIndex, String item, int count) {
+        applySelectedHotbarSlot(player.createCommandSourceStack(), slotIndex, item, count);
     }
 
     public static void applySelectedEffectFromGui(ServerPlayer player, String effect, int durationSeconds, int amplifier) {
@@ -831,6 +887,16 @@ public final class PlayerBatchService {
             int sanitizedCount = Math.max(1, count);
             for (EntityPlayerMPFake player : players) {
                 player.setItemSlot(slot, new ItemStack(item, sanitizedCount));
+            }
+            broadcast(false);
+            return players.size();
+        }
+
+        private int applySelectedHotbarSlot(int slotIndex, Item item, int count) {
+            List<EntityPlayerMPFake> players = selectedPlayers();
+            int sanitizedCount = Math.max(1, count);
+            for (EntityPlayerMPFake player : players) {
+                player.getInventory().setItem(slotIndex, new ItemStack(item, sanitizedCount));
             }
             broadcast(false);
             return players.size();

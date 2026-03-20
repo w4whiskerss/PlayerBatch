@@ -44,6 +44,7 @@ public final class PlayerBatchNetworking {
             case SET_DEBUG -> PlayerBatchService.applyDebugFromGui(player, payload.flag());
             case SUMMON -> PlayerBatchService.requestSummonFromGui(player, payload.number(), payload.text(), payload.detail());
             case RUN_ACTION -> PlayerBatchService.runSelectedActionFromGui(player, payload.text());
+            case RUN_ACTION_SET -> PlayerBatchService.runSelectedActionSetFromGui(player, payload.text());
             case TELEPORT_SELECTION -> PlayerBatchService.teleportSelectionFromGui(player, payload.text(), payload.detail());
             case CLEAR_SELECTION -> PlayerBatchService.clearSelectionFromGui(player);
             case GIVE_WAND -> PlayerBatchService.giveWandFromGui(player);
@@ -56,6 +57,7 @@ public final class PlayerBatchNetworking {
             case SET_SELECTED_AI -> PlayerBatchService.setSelectedAiModeFromGui(player, payload.text());
             case SET_GROUP_AI -> PlayerBatchService.setGroupAiModeFromGui(player, payload.text(), payload.detail());
             case APPLY_SELECTED_ITEM -> PlayerBatchService.applySelectedItemFromGui(player, payload.text(), payload.detail(), payload.number());
+            case APPLY_SELECTED_HOTBAR_SLOT -> PlayerBatchService.applySelectedHotbarSlotFromGui(player, payload.number(), payload.text(), parseOptionalInt(payload.detail(), 1));
             case APPLY_SELECTED_EFFECT -> PlayerBatchService.applySelectedEffectFromGui(player, payload.text(), payload.number(), parseOptionalInt(payload.detail(), 0));
             case CLEAR_SELECTED_EFFECTS -> PlayerBatchService.clearSelectedEffectsFromGui(player);
         }
@@ -77,6 +79,7 @@ public final class PlayerBatchNetworking {
         SET_DEBUG,
         SUMMON,
         RUN_ACTION,
+        RUN_ACTION_SET,
         TELEPORT_SELECTION,
         CLEAR_SELECTION,
         GIVE_WAND,
@@ -89,6 +92,7 @@ public final class PlayerBatchNetworking {
         SET_SELECTED_AI,
         SET_GROUP_AI,
         APPLY_SELECTED_ITEM,
+        APPLY_SELECTED_HOTBAR_SLOT,
         APPLY_SELECTED_EFFECT,
         CLEAR_SELECTED_EFFECTS
     }

@@ -113,6 +113,7 @@ public class PlayerBatchScreen extends Screen {
     private EditBox blockBox;
 
     private Button debugButton;
+    private boolean applyingAutocomplete;
 
     public PlayerBatchScreen(Screen parent) {
         super(Component.literal("PlayerBatch"));
@@ -220,26 +221,30 @@ public class PlayerBatchScreen extends Screen {
         register(addRenderableWidget(Button.builder(Component.literal("Select All Bots"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SELECT_ALL, "", "", 0, false
         ))).bounds(left, top + 18, 120, 20).build()), customizationWidgets);
+        register(addRenderableWidget(Button.builder(Component.literal("Deselect All"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
+                PlayerBatchNetworking.ActionKind.CLEAR_SELECTION, "", "", 0, false
+        ))).bounds(left + 126, top + 18, 108, 20).build()), customizationWidgets);
 
-        rangeBox = register(addRenderableWidget(new EditBox(font, left + 126, top + 18, 48, 20, Component.literal("Range"))), customizationWidgets);
+        rangeBox = register(addRenderableWidget(new EditBox(font, left + 240, top + 18, 40, 20, Component.literal("Range"))), customizationWidgets);
         rangeBox.setValue(preferences.selectRange());
         rangeBox.setResponder(value -> savePreferences());
         register(addRenderableWidget(Button.builder(Component.literal("Nearest X"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SELECT_RANGE, "", "", parseInt(rangeBox.getValue(), 16), false
-        ))).bounds(left + 180, top + 18, 90, 20).build()), customizationWidgets);
+        ))).bounds(left + 286, top + 18, 82, 20).build()), customizationWidgets);
 
-        closestBox = register(addRenderableWidget(new EditBox(font, left + 276, top + 18, 48, 20, Component.literal("Count"))), customizationWidgets);
+        closestBox = register(addRenderableWidget(new EditBox(font, left + 240, top + 44, 40, 20, Component.literal("Count"))), customizationWidgets);
         closestBox.setValue(preferences.selectClosest());
         closestBox.setResponder(value -> savePreferences());
         register(addRenderableWidget(Button.builder(Component.literal("Closest"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SELECT_CLOSEST, "", "", parseInt(closestBox.getValue(), 10), false
-        ))).bounds(left + 330, top + 18, 56, 20).build()), customizationWidgets);
+        ))).bounds(left + 286, top + 44, 82, 20).build()), customizationWidgets);
 
-        register(addRenderableWidget(Button.builder(Component.literal("Clear Selection"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
-                PlayerBatchNetworking.ActionKind.CLEAR_SELECTION, "", "", 0, false
-        ))).bounds(left, top + 44, 120, 20).build()), customizationWidgets);
         register(addRenderableWidget(Button.builder(Component.literal("Complete Focus"), button -> completeFocusedAutocomplete())
-                .bounds(left + 126, top + 44, 120, 20).build()), customizationWidgets);
+                .bounds(left, top + 44, 120, 20).build()), customizationWidgets);
+        register(addRenderableWidget(Button.builder(Component.literal("Action Editor"), button -> Minecraft.getInstance().setScreen(new ActionEditorScreen(this)))
+                .bounds(left, top + 70, 120, 20).build()), customizationWidgets);
+        register(addRenderableWidget(Button.builder(Component.literal("Loadout Editor"), button -> Minecraft.getInstance().setScreen(new LoadoutEditorScreen(this)))
+                .bounds(left + 126, top + 70, 120, 20).build()), customizationWidgets);
 
         groupBox = register(addRenderableWidget(new EditBox(font, left, top + 88, 120, 20, Component.literal("Group"))), customizationWidgets);
         groupBox.setValue(preferences.groupName());
@@ -431,6 +436,7 @@ public class PlayerBatchScreen extends Screen {
         guiGraphics.drawString(font, "Tab 2: Customization", left, top, 0xEBDCA9);
         guiGraphics.drawString(font, "Selection, groups, AI mode assignment, item/armor editing, effects, and teleport controls.", left, top + 68, 0xC3CED7);
         guiGraphics.drawString(font, "Select All Bots is global and does not use distance limits.", left, top + 84, 0x9BE5B8);
+        guiGraphics.drawString(font, "Action Editor builds multi-action sets. Loadout Editor gives slot-based armor/hotbar editing.", left, top + 100, 0x9BE5B8);
         guiGraphics.drawString(font, "Supported AI modes: idle, combat, patrol, guard, follow, flee", left, top + 156, 0x9BE5B8);
         guiGraphics.drawString(font, "AI combos work too: follow+combat, guard+combat, follow+guard", left, top + 172, 0x9BE5B8);
         guiGraphics.drawString(font, "Item slots: head, chest, legs, feet, mainhand, offhand", left, top + 188, 0x9BE5B8);
@@ -499,11 +505,11 @@ public class PlayerBatchScreen extends Screen {
 
     private void initSummonPaneButtons(int left, int top) {
         register(addRenderableWidget(Button.builder(Component.literal("Setup"), button -> switchSummonPane(SummonPane.SETUP))
-                .bounds(left, top + 18, 88, 20).build()), summoningWidgets);
+                .bounds(left, top - 10, 88, 20).build()), summoningWidgets);
         register(addRenderableWidget(Button.builder(Component.literal("Loadout"), button -> switchSummonPane(SummonPane.LOADOUT))
-                .bounds(left + 94, top + 18, 88, 20).build()), summoningWidgets);
+                .bounds(left + 94, top - 10, 88, 20).build()), summoningWidgets);
         register(addRenderableWidget(Button.builder(Component.literal("Distribution"), button -> switchSummonPane(SummonPane.DISTRIBUTION))
-                .bounds(left + 188, top + 18, 104, 20).build()), summoningWidgets);
+                .bounds(left + 188, top - 10, 104, 20).build()), summoningWidgets);
     }
 
     private void initSummonLoadoutFields() {
@@ -630,6 +636,16 @@ public class PlayerBatchScreen extends Screen {
             return;
         }
         box.setSuggestion(completion.substring(Math.min(currentValue.length(), completion.length())));
+        if (!applyingAutocomplete && box.isFocused()) {
+            String uniqueCompletion = uniqueAutocompleteValue(currentValue, options);
+            if (uniqueCompletion != null && !uniqueCompletion.equalsIgnoreCase(currentValue)) {
+                applyingAutocomplete = true;
+                box.setValue(uniqueCompletion);
+                box.moveCursorToEnd(false);
+                applyingAutocomplete = false;
+                box.setSuggestion(null);
+            }
+        }
     }
 
     private void completeFocusedAutocomplete() {
@@ -683,6 +699,23 @@ public class PlayerBatchScreen extends Screen {
             }
         }
         return null;
+    }
+
+    private String uniqueAutocompleteValue(String currentValue, Collection<String> options) {
+        String normalized = currentValue == null ? "" : currentValue.trim().toLowerCase(Locale.ROOT);
+        if (normalized.length() < 2) {
+            return null;
+        }
+        String match = null;
+        for (String option : options) {
+            if (option.toLowerCase(Locale.ROOT).startsWith(normalized)) {
+                if (match != null) {
+                    return null;
+                }
+                match = option;
+            }
+        }
+        return match;
     }
 
     private List<String> currentGroupOptions() {
