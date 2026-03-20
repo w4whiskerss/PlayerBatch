@@ -1165,7 +1165,11 @@ public final class PlayerBatchService {
                     fakePlayer.setYRot(nextYaw);
                     fakePlayer.setYHeadRot(nextYaw);
                 }
-                case FOLLOW -> lookAtTarget(fakePlayer, findNearestPlayerTarget(fakePlayer, 24.0D));
+                case FOLLOW -> {
+                    ServerPlayer target = findNearestPlayerTarget(fakePlayer, 24.0D);
+                    lookAtTarget(fakePlayer, target);
+                    moveTowardTarget(fakePlayer, target, 2.5D, 0.32D);
+                }
                 case GUARD -> lookAtTarget(fakePlayer, findNearestThreat(fakePlayer, 16.0D));
                 case COMBAT -> {
                     LivingEntity target = findNearestThreat(fakePlayer, 10.0D);
@@ -1210,6 +1214,28 @@ public final class PlayerBatchService {
                 return;
             }
             source.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, target.position().add(0.0D, target.getEyeHeight(), 0.0D));
+        }
+
+        private void moveTowardTarget(EntityPlayerMPFake source, Entity target, double preferredDistance, double speed) {
+            if (target == null) {
+                return;
+            }
+
+            Vec3 offset = target.position().subtract(source.position());
+            double distance = offset.length();
+            if (distance <= preferredDistance || distance < 0.001D) {
+                source.setDeltaMovement(source.getDeltaMovement().multiply(0.35D, 1.0D, 0.35D));
+                return;
+            }
+
+            Vec3 horizontal = new Vec3(offset.x, 0.0D, offset.z);
+            if (horizontal.lengthSqr() < 0.0001D) {
+                return;
+            }
+
+            Vec3 motion = horizontal.normalize().scale(speed);
+            double verticalBoost = target.getY() > source.getY() + 1.0D ? 0.18D : source.getDeltaMovement().y;
+            source.setDeltaMovement(motion.x, Math.max(source.getDeltaMovement().y, verticalBoost), motion.z);
         }
 
         private void debug(String pattern, Object... args) {
