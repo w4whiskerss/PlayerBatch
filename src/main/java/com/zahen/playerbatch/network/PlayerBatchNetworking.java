@@ -50,6 +50,11 @@ public final class PlayerBatchNetworking {
             case SELECT_ALL -> PlayerBatchService.selectAllFromGui(player);
             case SELECT_RANGE -> PlayerBatchService.selectRangeFromGui(player, payload.number());
             case SELECT_CLOSEST -> PlayerBatchService.selectClosestFromGui(player, payload.number());
+            case CREATE_GROUP -> PlayerBatchService.createGroupFromGui(player, payload.text());
+            case ASSIGN_GROUP -> PlayerBatchService.assignSelectionToGroupFromGui(player, payload.text());
+            case REMOVE_GROUP -> PlayerBatchService.removeSelectionFromGroupFromGui(player, payload.text());
+            case SET_SELECTED_AI -> PlayerBatchService.setSelectedAiModeFromGui(player, payload.text());
+            case SET_GROUP_AI -> PlayerBatchService.setGroupAiModeFromGui(player, payload.text(), payload.detail());
         }
     }
 
@@ -66,7 +71,12 @@ public final class PlayerBatchNetworking {
         GIVE_WAND,
         SELECT_ALL,
         SELECT_RANGE,
-        SELECT_CLOSEST
+        SELECT_CLOSEST,
+        CREATE_GROUP,
+        ASSIGN_GROUP,
+        REMOVE_GROUP,
+        SET_SELECTED_AI,
+        SET_GROUP_AI
     }
 
     public record PlayerBatchActionPayload(ActionKind kind, String text, String detail, int number, boolean flag) implements CustomPacketPayload {

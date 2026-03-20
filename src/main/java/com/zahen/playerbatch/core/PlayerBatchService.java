@@ -371,6 +371,26 @@ public final class PlayerBatchService {
         selectClosest(player.createCommandSourceStack(), count);
     }
 
+    public static void createGroupFromGui(ServerPlayer player, String name) {
+        createGroup(player.createCommandSourceStack(), name);
+    }
+
+    public static void assignSelectionToGroupFromGui(ServerPlayer player, String name) {
+        assignSelectionToGroup(player.createCommandSourceStack(), name);
+    }
+
+    public static void removeSelectionFromGroupFromGui(ServerPlayer player, String name) {
+        removeSelectionFromGroup(player.createCommandSourceStack(), name);
+    }
+
+    public static void setSelectedAiModeFromGui(ServerPlayer player, String mode) {
+        setSelectedAiMode(player.createCommandSourceStack(), mode);
+    }
+
+    public static void setGroupAiModeFromGui(ServerPlayer player, String group, String mode) {
+        setGroupAiMode(player.createCommandSourceStack(), group, mode);
+    }
+
     public static boolean toggleSelection(ServerPlayer actor, Entity entity) {
         if (!isManagedBot(entity)) {
             return false;

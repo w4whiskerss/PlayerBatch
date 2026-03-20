@@ -25,6 +25,7 @@
 - Batch actions for selected fake players
 - Group creation, assignment, removal, and listing
 - AI mode assignment for selected bots or full groups
+- Prompt-aligned tabbed GUI with `Summoning`, `Customization`, and `Debug`
 - `/pb` alias for the core PlayerBatch command tree
 - Optional Mod Menu config entry
 - Debug logging toggle for troubleshooting
@@ -43,6 +44,12 @@
 - `/pb`
 
 Opens the PlayerBatch GUI.
+
+Current GUI tabs:
+
+- `Summoning`
+- `Customization`
+- `Debug`
 
 ### Settings
 
@@ -152,13 +159,14 @@ What is included now:
 - Per-bot AI brain state for selected bots
 - Tick-driven AI updates on the server
 - GUI state sync showing live group summaries
+- Tabbed GUI flow that separates summoning, customization, and diagnostics
 
 What this foundation is preparing for next:
 
 - Targeting rules
-- event triggers
-- pathfinding
-- scenario orchestration
+- Event triggers
+- Pathfinding
+- Scenario orchestration
 - preset serialization for groups and AI
 
 ## Name Rules
