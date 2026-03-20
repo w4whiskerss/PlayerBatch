@@ -1951,11 +1951,15 @@ public final class PlayerBatchService {
 
     public static void cleanupManagedBot(Entity entity) {
         if (entity instanceof EntityPlayerMPFake fakePlayer) {
-            cleanupManagedBot(fakePlayer);
+            cleanupManagedBot(fakePlayer, true);
         }
     }
 
     private static void cleanupManagedBot(EntityPlayerMPFake fakePlayer) {
+        cleanupManagedBot(fakePlayer, false);
+    }
+
+    private static void cleanupManagedBot(EntityPlayerMPFake fakePlayer, boolean preserveManagedTag) {
         fakePlayer.removeAllEffects();
         for (EquipmentSlot slot : EquipmentSlot.values()) {
             fakePlayer.setItemSlot(slot, ItemStack.EMPTY);
@@ -1964,7 +1968,13 @@ public final class PlayerBatchService {
             fakePlayer.getInventory().setItem(index, ItemStack.EMPTY);
         }
         for (String tag : List.copyOf(fakePlayer.getTags())) {
+            if (preserveManagedTag && BOT_TAG.equals(tag)) {
+                continue;
+            }
             fakePlayer.removeTag(tag);
+        }
+        if (preserveManagedTag && !fakePlayer.getTags().contains(BOT_TAG)) {
+            fakePlayer.addTag(BOT_TAG);
         }
     }
 }
