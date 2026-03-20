@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -327,12 +328,12 @@ public final class PlayerBatchService {
     }
 
     public static int setSelectedAiMode(CommandSourceStack source, String rawMode) {
-        BotAiMode mode = BotAiMode.fromString(rawMode);
-        if (mode == null) {
-            source.sendFailure(Component.literal("Unknown AI mode. Use: idle, combat, patrol, guard, follow, flee."));
+        EnumSet<BotAiMode> modes = BotAiMode.parseSet(rawMode);
+        if (modes == null) {
+            source.sendFailure(Component.literal("Unknown AI mode. Use: idle, combat, patrol, guard, follow, flee. Combine with +."));
             return 0;
         }
-        AiResult result = state(source.getServer()).setSelectedAiMode(mode);
+        AiResult result = state(source.getServer()).setSelectedAiModes(modes);
         if (!result.success()) {
             source.sendFailure(Component.literal(result.message()));
             return 0;
@@ -342,12 +343,12 @@ public final class PlayerBatchService {
     }
 
     public static int setGroupAiMode(CommandSourceStack source, String rawName, String rawMode) {
-        BotAiMode mode = BotAiMode.fromString(rawMode);
-        if (mode == null) {
-            source.sendFailure(Component.literal("Unknown AI mode. Use: idle, combat, patrol, guard, follow, flee."));
+        EnumSet<BotAiMode> modes = BotAiMode.parseSet(rawMode);
+        if (modes == null) {
+            source.sendFailure(Component.literal("Unknown AI mode. Use: idle, combat, patrol, guard, follow, flee. Combine with +."));
             return 0;
         }
-        AiResult result = state(source.getServer()).setGroupAiMode(rawName, mode);
+        AiResult result = state(source.getServer()).setGroupAiModes(rawName, modes);
         if (!result.success()) {
             source.sendFailure(Component.literal(result.message()));
             return 0;
@@ -973,8 +974,8 @@ public final class PlayerBatchService {
                 BotBrain brain = ensureBrain(player);
                 group.memberIds().add(player.getUUID());
                 brain.groupKey = normalizeGroupName(group.displayName());
-                if (brain.mode != group.sharedMode()) {
-                    brain.mode = group.sharedMode();
+                if (!brain.modes.equals(group.sharedModes())) {
+                    brain.modes = EnumSet.copyOf(group.sharedModes());
                 }
                 added++;
             }
@@ -1008,39 +1009,39 @@ public final class PlayerBatchService {
         private List<String> groupSummaries() {
             List<String> summaries = new ArrayList<>();
             for (BotGroup group : groups.values()) {
-                summaries.add(group.displayName() + "=" + group.memberIds().size() + " [" + group.sharedMode().displayName() + "]");
+                summaries.add(group.displayName() + "=" + group.memberIds().size() + " [" + BotAiMode.displayModes(group.sharedModes()) + "]");
             }
             return summaries;
         }
 
-        private AiResult setSelectedAiMode(BotAiMode mode) {
+        private AiResult setSelectedAiModes(EnumSet<BotAiMode> modes) {
             List<EntityPlayerMPFake> players = selectedPlayers();
             if (players.isEmpty()) {
                 return AiResult.failure("Select one or more managed bots first.");
             }
             for (EntityPlayerMPFake player : players) {
-                ensureBrain(player).mode = mode;
+                ensureBrain(player).modes = EnumSet.copyOf(modes);
             }
             broadcast(false);
-            return AiResult.success("Set AI mode to '" + mode.displayName() + "' for " + players.size() + " selected bot" + suffix(players.size()) + ".", players.size());
+            return AiResult.success("Set AI mode to '" + BotAiMode.displayModes(modes) + "' for " + players.size() + " selected bot" + suffix(players.size()) + ".", players.size());
         }
 
-        private AiResult setGroupAiMode(String rawName, BotAiMode mode) {
+        private AiResult setGroupAiModes(String rawName, EnumSet<BotAiMode> modes) {
             BotGroup group = groups.get(normalizeGroupName(rawName));
             if (group == null) {
                 return AiResult.failure("Unknown group: " + rawName);
             }
-            group.sharedMode = mode;
+            group.sharedModes = EnumSet.copyOf(modes);
             int affected = 0;
             for (UUID memberId : List.copyOf(group.memberIds())) {
                 ServerPlayer player = server.getPlayerList().getPlayer(memberId);
                 if (player instanceof EntityPlayerMPFake fakePlayer && isManagedBot(fakePlayer)) {
-                    ensureBrain(fakePlayer).mode = mode;
+                    ensureBrain(fakePlayer).modes = EnumSet.copyOf(modes);
                     affected++;
                 }
             }
             broadcast(false);
-            return AiResult.success("Set group '" + group.displayName() + "' AI mode to '" + mode.displayName() + "' for " + affected + " bot" + suffix(affected) + ".", affected);
+            return AiResult.success("Set group '" + group.displayName() + "' AI mode to '" + BotAiMode.displayModes(modes) + "' for " + affected + " bot" + suffix(affected) + ".", affected);
         }
 
         private List<String> selectedAiSummary() {
@@ -1048,7 +1049,7 @@ public final class PlayerBatchService {
             for (EntityPlayerMPFake player : selectedPlayers()) {
                 BotBrain brain = ensureBrain(player);
                 String groupText = brain.groupKey == null ? "ungrouped" : groups.getOrDefault(brain.groupKey, new BotGroup(brain.groupKey)).displayName();
-                summary.add(player.getGameProfile().name() + "=" + brain.mode.displayName() + " (" + groupText + ")");
+                summary.add(player.getGameProfile().name() + "=" + BotAiMode.displayModes(brain.modes) + " (" + groupText + ")");
             }
             return summary;
         }
@@ -1058,7 +1059,7 @@ public final class PlayerBatchService {
             if (group == null) {
                 return null;
             }
-            return "Group '" + group.displayName() + "' has " + group.memberIds().size() + " bot" + suffix(group.memberIds().size()) + " with shared AI mode '" + group.sharedMode().displayName() + "'.";
+            return "Group '" + group.displayName() + "' has " + group.memberIds().size() + " bot" + suffix(group.memberIds().size()) + " with shared AI mode '" + BotAiMode.displayModes(group.sharedModes()) + "'.";
         }
 
         private void addSubscriber(UUID subscriber) {
@@ -1157,37 +1158,51 @@ public final class PlayerBatchService {
         }
 
         private void tickBrain(EntityPlayerMPFake fakePlayer, BotBrain brain) {
-            switch (brain.mode) {
-                case IDLE -> {
+            EnumSet<BotAiMode> modes = brain.modes.isEmpty() ? EnumSet.of(BotAiMode.IDLE) : EnumSet.copyOf(brain.modes);
+
+            if (modes.contains(BotAiMode.PATROL)) {
+                float nextYaw = fakePlayer.getYRot() + 25.0F;
+                fakePlayer.setYRot(nextYaw);
+                fakePlayer.setYHeadRot(nextYaw);
+            }
+
+            ServerPlayer followTarget = modes.contains(BotAiMode.FOLLOW) ? findNearestPlayerTarget(fakePlayer, 24.0D) : null;
+            LivingEntity threat = (modes.contains(BotAiMode.GUARD) || modes.contains(BotAiMode.COMBAT) || modes.contains(BotAiMode.FLEE))
+                    ? findNearestThreat(fakePlayer, 16.0D)
+                    : null;
+
+            if (modes.contains(BotAiMode.FLEE) && threat != null) {
+                Vec3 away = fakePlayer.position().subtract(threat.position()).normalize().scale(0.35D);
+                fakePlayer.setDeltaMovement(away.x, Math.max(0.1D, fakePlayer.getDeltaMovement().y), away.z);
+                return;
+            }
+
+            if (modes.contains(BotAiMode.COMBAT) && threat != null) {
+                lookAtTarget(fakePlayer, threat);
+                if (fakePlayer.distanceToSqr(threat) > 9.0D) {
+                    moveTowardTarget(fakePlayer, threat, 2.2D, 0.34D);
+                } else {
+                    dampHorizontalMotion(fakePlayer);
+                    fakePlayer.swing(fakePlayer.getUsedItemHand(), true);
+                    fakePlayer.attack(threat);
                 }
-                case PATROL -> {
-                    float nextYaw = fakePlayer.getYRot() + 25.0F;
-                    fakePlayer.setYRot(nextYaw);
-                    fakePlayer.setYHeadRot(nextYaw);
-                }
-                case FOLLOW -> {
-                    ServerPlayer target = findNearestPlayerTarget(fakePlayer, 24.0D);
-                    lookAtTarget(fakePlayer, target);
-                    moveTowardTarget(fakePlayer, target, 2.5D, 0.32D);
-                }
-                case GUARD -> lookAtTarget(fakePlayer, findNearestThreat(fakePlayer, 16.0D));
-                case COMBAT -> {
-                    LivingEntity target = findNearestThreat(fakePlayer, 10.0D);
-                    if (target != null) {
-                        lookAtTarget(fakePlayer, target);
-                        if (fakePlayer.distanceToSqr(target) <= 9.0D) {
-                            fakePlayer.swing(fakePlayer.getUsedItemHand(), true);
-                            fakePlayer.attack(target);
-                        }
-                    }
-                }
-                case FLEE -> {
-                    LivingEntity target = findNearestThreat(fakePlayer, 12.0D);
-                    if (target != null) {
-                        Vec3 away = fakePlayer.position().subtract(target.position()).normalize().scale(0.35D);
-                        fakePlayer.setDeltaMovement(away.x, Math.max(0.1D, fakePlayer.getDeltaMovement().y), away.z);
-                    }
-                }
+                return;
+            }
+
+            if (modes.contains(BotAiMode.FOLLOW) && followTarget != null) {
+                lookAtTarget(fakePlayer, followTarget);
+                moveTowardTarget(fakePlayer, followTarget, 2.5D, 0.32D);
+                return;
+            }
+
+            if (modes.contains(BotAiMode.GUARD) && threat != null) {
+                lookAtTarget(fakePlayer, threat);
+                dampHorizontalMotion(fakePlayer);
+                return;
+            }
+
+            if (!modes.contains(BotAiMode.PATROL)) {
+                dampHorizontalMotion(fakePlayer);
             }
         }
 
@@ -1218,24 +1233,52 @@ public final class PlayerBatchService {
 
         private void moveTowardTarget(EntityPlayerMPFake source, Entity target, double preferredDistance, double speed) {
             if (target == null) {
+                dampHorizontalMotion(source);
                 return;
             }
 
             Vec3 offset = target.position().subtract(source.position());
             double distance = offset.length();
             if (distance <= preferredDistance || distance < 0.001D) {
-                source.setDeltaMovement(source.getDeltaMovement().multiply(0.35D, 1.0D, 0.35D));
+                dampHorizontalMotion(source);
                 return;
             }
 
             Vec3 horizontal = new Vec3(offset.x, 0.0D, offset.z);
             if (horizontal.lengthSqr() < 0.0001D) {
+                dampHorizontalMotion(source);
+                return;
+            }
+
+            if (!source.onGround()) {
+                source.setSprinting(false);
                 return;
             }
 
             Vec3 motion = horizontal.normalize().scale(speed);
-            double verticalBoost = target.getY() > source.getY() + 1.0D ? 0.18D : source.getDeltaMovement().y;
-            source.setDeltaMovement(motion.x, Math.max(source.getDeltaMovement().y, verticalBoost), motion.z);
+            boolean shouldJump = shouldJumpTowardTarget(source, target, motion);
+            boolean shouldSneak = shouldSneakTowardTarget(source, motion);
+            source.setShiftKeyDown(shouldSneak);
+            source.setSprinting(distance > preferredDistance + 4.0D && !shouldSneak);
+            source.setDeltaMovement(motion.x, shouldJump ? 0.42D : Math.max(0.0D, source.getDeltaMovement().y), motion.z);
+        }
+
+        private void dampHorizontalMotion(EntityPlayerMPFake source) {
+            source.setShiftKeyDown(false);
+            source.setSprinting(false);
+            source.setDeltaMovement(source.getDeltaMovement().multiply(0.35D, 1.0D, 0.35D));
+        }
+
+        private boolean shouldJumpTowardTarget(EntityPlayerMPFake source, Entity target, Vec3 motion) {
+            BlockPos stepPos = BlockPos.containing(source.getX() + motion.x * 1.2D, source.getY(), source.getZ() + motion.z * 1.2D);
+            boolean stepBlocked = source.level().getBlockState(stepPos).blocksMotion()
+                    && !source.level().getBlockState(stepPos.above()).blocksMotion();
+            return target.getY() > source.getY() + 0.75D || stepBlocked;
+        }
+
+        private boolean shouldSneakTowardTarget(EntityPlayerMPFake source, Vec3 motion) {
+            BlockPos aheadBelow = BlockPos.containing(source.getX() + motion.x * 1.1D, source.getY() - 1.0D, source.getZ() + motion.z * 1.1D);
+            return source.level().getBlockState(aheadBelow).isAir();
         }
 
         private void debug(String pattern, Object... args) {
@@ -1651,7 +1694,7 @@ public final class PlayerBatchService {
     private static final class BotGroup {
         private final String displayName;
         private final Set<UUID> memberIds = new LinkedHashSet<>();
-        private BotAiMode sharedMode = BotAiMode.IDLE;
+        private EnumSet<BotAiMode> sharedModes = EnumSet.of(BotAiMode.IDLE);
 
         private BotGroup(String displayName) {
             this.displayName = displayName;
@@ -1665,13 +1708,13 @@ public final class PlayerBatchService {
             return memberIds;
         }
 
-        private BotAiMode sharedMode() {
-            return sharedMode;
+        private EnumSet<BotAiMode> sharedModes() {
+            return sharedModes;
         }
     }
 
     private static final class BotBrain {
-        private BotAiMode mode = BotAiMode.IDLE;
+        private EnumSet<BotAiMode> modes = EnumSet.of(BotAiMode.IDLE);
         private String groupKey;
     }
 }

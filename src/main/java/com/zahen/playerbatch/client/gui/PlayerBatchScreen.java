@@ -387,9 +387,10 @@ public class PlayerBatchScreen extends Screen {
         guiGraphics.drawString(font, "Selection, groups, AI mode assignment, item/armor editing, effects, and teleport controls.", left, top + 68, 0xC3CED7);
         guiGraphics.drawString(font, "Select All Bots is global and does not use distance limits.", left, top + 84, 0x9BE5B8);
         guiGraphics.drawString(font, "Supported AI modes: idle, combat, patrol, guard, follow, flee", left, top + 156, 0x9BE5B8);
-        guiGraphics.drawString(font, "Item slots: head, chest, legs, feet, mainhand, offhand", left, top + 172, 0x9BE5B8);
-        guiGraphics.drawString(font, "Autocomplete works for group, AI, slot, item, effect, action, direction, and block fields.", left, top + 188, 0x9BE5B8);
-        guiGraphics.drawString(font, "Use Complete Focus to accept the suggestion for the text box you're editing.", left, top + 204, 0x9BE5B8);
+        guiGraphics.drawString(font, "AI combos work too: follow+combat, guard+combat, follow+guard", left, top + 172, 0x9BE5B8);
+        guiGraphics.drawString(font, "Item slots: head, chest, legs, feet, mainhand, offhand", left, top + 188, 0x9BE5B8);
+        guiGraphics.drawString(font, "Autocomplete works for group, AI, slot, item, effect, action, direction, and block fields.", left, top + 204, 0x9BE5B8);
+        guiGraphics.drawString(font, "Use Complete Focus to accept the suggestion for the text box you're editing.", left, top + 220, 0x9BE5B8);
         guiGraphics.drawString(font, "Groups: " + (snapshot.groups().isEmpty() ? "none yet" : String.join(" | ", snapshot.groups())), left, top + 290, 0xA8E8D2);
         guiGraphics.drawString(font, "Selected bots (" + snapshot.selectedNames().size() + "): " + selectedSummary(), left, top + 306, 0xBFD7E6);
         guiGraphics.drawString(font, "Full inventory pages, enchant editing, and wand area selection are still pending backend implementation.", left, top + 322, 0xE8C89C);
