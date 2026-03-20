@@ -52,6 +52,13 @@ public final class BotConfig {
                 properties.setProperty("hotbar." + index + ".count", Integer.toString(spec.count()));
             }
         }
+        for (int index = 9; index < 36; index++) {
+            BotLoadout.StackSpec spec = loadout.inventory().get(index);
+            if (spec != null) {
+                properties.setProperty("inventory." + index + ".item", spec.itemId());
+                properties.setProperty("inventory." + index + ".count", Integer.toString(spec.count()));
+            }
+        }
         for (int index = 0; index < loadout.effects().size(); index++) {
             BotLoadout.EffectSpec effect = loadout.effects().get(index);
             properties.setProperty("effect." + index + ".id", effect.effectId());
@@ -101,6 +108,12 @@ public final class BotConfig {
             String itemId = properties.getProperty("hotbar." + index + ".item", "").trim();
             if (!itemId.isEmpty()) {
                 loadout.hotbar().put(index, new BotLoadout.StackSpec(itemId, parseInt(properties.getProperty("hotbar." + index + ".count"), 1)));
+            }
+        }
+        for (int index = 9; index < 36; index++) {
+            String itemId = properties.getProperty("inventory." + index + ".item", "").trim();
+            if (!itemId.isEmpty()) {
+                loadout.inventory().put(index, new BotLoadout.StackSpec(itemId, parseInt(properties.getProperty("inventory." + index + ".count"), 1)));
             }
         }
         for (int index = 0; index < 12; index++) {

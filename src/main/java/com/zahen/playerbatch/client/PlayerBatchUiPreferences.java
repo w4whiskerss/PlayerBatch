@@ -24,6 +24,7 @@ public final class PlayerBatchUiPreferences {
     private static final String KEY_SUMMON_MAINHAND = "summonMainhand";
     private static final String KEY_SUMMON_OFFHAND = "summonOffhand";
     private static final String KEY_SUMMON_HOTBAR = "summonHotbar";
+    private static final String KEY_SUMMON_INVENTORY = "summonInventory";
     private static final String KEY_SUMMON_EFFECT_ID = "summonEffectId";
     private static final String KEY_SUMMON_EFFECT_DURATION = "summonEffectDuration";
     private static final String KEY_SUMMON_EFFECT_AMPLIFIER = "summonEffectAmplifier";
@@ -64,6 +65,7 @@ public final class PlayerBatchUiPreferences {
     private String summonMainhand = "diamond_sword";
     private String summonOffhand = "";
     private String summonHotbar = "";
+    private String summonInventory = "";
     private String summonEffectId = "speed";
     private String summonEffectDuration = "30";
     private String summonEffectAmplifier = "0";
@@ -120,6 +122,7 @@ public final class PlayerBatchUiPreferences {
         preferences.summonMainhand = read(properties, KEY_SUMMON_MAINHAND, preferences.summonMainhand);
         preferences.summonOffhand = read(properties, KEY_SUMMON_OFFHAND, preferences.summonOffhand);
         preferences.summonHotbar = read(properties, KEY_SUMMON_HOTBAR, preferences.summonHotbar);
+        preferences.summonInventory = read(properties, KEY_SUMMON_INVENTORY, preferences.summonInventory);
         preferences.summonEffectId = read(properties, KEY_SUMMON_EFFECT_ID, preferences.summonEffectId);
         preferences.summonEffectDuration = read(properties, KEY_SUMMON_EFFECT_DURATION, preferences.summonEffectDuration);
         preferences.summonEffectAmplifier = read(properties, KEY_SUMMON_EFFECT_AMPLIFIER, preferences.summonEffectAmplifier);
@@ -166,6 +169,7 @@ public final class PlayerBatchUiPreferences {
         properties.setProperty(KEY_SUMMON_MAINHAND, summonMainhand);
         properties.setProperty(KEY_SUMMON_OFFHAND, summonOffhand);
         properties.setProperty(KEY_SUMMON_HOTBAR, summonHotbar);
+        properties.setProperty(KEY_SUMMON_INVENTORY, summonInventory);
         properties.setProperty(KEY_SUMMON_EFFECT_ID, summonEffectId);
         properties.setProperty(KEY_SUMMON_EFFECT_DURATION, summonEffectDuration);
         properties.setProperty(KEY_SUMMON_EFFECT_AMPLIFIER, summonEffectAmplifier);
@@ -295,6 +299,14 @@ public final class PlayerBatchUiPreferences {
 
     public void setSummonHotbar(String summonHotbar) {
         this.summonHotbar = summonHotbar;
+    }
+
+    public String summonInventory() {
+        return summonInventory;
+    }
+
+    public void setSummonInventory(String summonInventory) {
+        this.summonInventory = summonInventory;
     }
 
     public String summonEffectId() {

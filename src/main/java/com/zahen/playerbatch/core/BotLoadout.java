@@ -19,6 +19,7 @@ import java.util.Properties;
 public final class BotLoadout {
     private final Map<EquipmentSlot, StackSpec> equipment = new EnumMap<>(EquipmentSlot.class);
     private final Map<Integer, StackSpec> hotbar = new LinkedHashMap<>();
+    private final Map<Integer, StackSpec> inventory = new LinkedHashMap<>();
     private final List<EffectSpec> effects = new ArrayList<>();
 
     public Map<EquipmentSlot, StackSpec> equipment() {
@@ -29,18 +30,23 @@ public final class BotLoadout {
         return hotbar;
     }
 
+    public Map<Integer, StackSpec> inventory() {
+        return inventory;
+    }
+
     public List<EffectSpec> effects() {
         return effects;
     }
 
     public boolean isEmpty() {
-        return equipment.isEmpty() && hotbar.isEmpty() && effects.isEmpty();
+        return equipment.isEmpty() && hotbar.isEmpty() && inventory.isEmpty() && effects.isEmpty();
     }
 
     public BotLoadout copy() {
         BotLoadout copy = new BotLoadout();
         copy.equipment.putAll(equipment);
         copy.hotbar.putAll(hotbar);
+        copy.inventory.putAll(inventory);
         copy.effects.addAll(effects);
         return copy;
     }
@@ -52,6 +58,7 @@ public final class BotLoadout {
         BotLoadout merged = copy();
         merged.equipment.putAll(overrides.equipment);
         merged.hotbar.putAll(overrides.hotbar);
+        merged.inventory.putAll(overrides.inventory);
         merged.effects.addAll(overrides.effects);
         return merged;
     }
@@ -76,6 +83,10 @@ public final class BotLoadout {
             properties.setProperty(prefix + "hotbar." + entry.getKey() + ".item", entry.getValue().itemId());
             properties.setProperty(prefix + "hotbar." + entry.getKey() + ".count", Integer.toString(entry.getValue().count()));
         }
+        for (Map.Entry<Integer, StackSpec> entry : inventory.entrySet()) {
+            properties.setProperty(prefix + "inventory." + entry.getKey() + ".item", entry.getValue().itemId());
+            properties.setProperty(prefix + "inventory." + entry.getKey() + ".count", Integer.toString(entry.getValue().count()));
+        }
         for (int index = 0; index < effects.size(); index++) {
             EffectSpec effect = effects.get(index);
             properties.setProperty(prefix + "effect." + index + ".id", effect.effectId());
@@ -96,6 +107,12 @@ public final class BotLoadout {
             String itemId = properties.getProperty(prefix + "hotbar." + index + ".item", "").trim();
             if (!itemId.isEmpty()) {
                 loadout.hotbar.put(index, new StackSpec(itemId, parseInt(properties.getProperty(prefix + "hotbar." + index + ".count"), 1)));
+            }
+        }
+        for (int index = 9; index < 36; index++) {
+            String itemId = properties.getProperty(prefix + "inventory." + index + ".item", "").trim();
+            if (!itemId.isEmpty()) {
+                loadout.inventory.put(index, new StackSpec(itemId, parseInt(properties.getProperty(prefix + "inventory." + index + ".count"), 1)));
             }
         }
         for (int index = 0; index < 12; index++) {
@@ -136,6 +153,12 @@ public final class BotLoadout {
         for (Map.Entry<Integer, StackSpec> entry : hotbar.entrySet()) {
             Item item = resolveItem(entry.getValue().itemId());
             if (item != null && entry.getKey() >= 0 && entry.getKey() < fakePlayer.getInventory().getContainerSize()) {
+                fakePlayer.getInventory().setItem(entry.getKey(), new ItemStack(item, Math.max(1, entry.getValue().count())));
+            }
+        }
+        for (Map.Entry<Integer, StackSpec> entry : inventory.entrySet()) {
+            Item item = resolveItem(entry.getValue().itemId());
+            if (item != null && entry.getKey() >= 9 && entry.getKey() < fakePlayer.getInventory().getContainerSize()) {
                 fakePlayer.getInventory().setItem(entry.getKey(), new ItemStack(item, Math.max(1, entry.getValue().count())));
             }
         }
