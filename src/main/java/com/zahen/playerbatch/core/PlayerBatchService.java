@@ -26,6 +26,7 @@ import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -1369,13 +1370,14 @@ public final class PlayerBatchService {
             EnumSet<BotAiMode> modes = brain.modes.isEmpty() ? EnumSet.of(BotAiMode.IDLE) : EnumSet.copyOf(brain.modes);
             CombatPresetSpec combatPreset = brain.combatPreset;
 
-            ServerPlayer followTarget = modes.contains(BotAiMode.FOLLOW) ? findNearestPlayerTarget(fakePlayer, 24.0D) : null;
+            ServerPlayer followTarget = modes.contains(BotAiMode.FOLLOW) ? findNearestPlayerTarget(fakePlayer, -1.0D) : null;
             LivingEntity threat = (modes.contains(BotAiMode.GUARD) || modes.contains(BotAiMode.COMBAT) || modes.contains(BotAiMode.FLEE) || combatPreset != null)
                     ? findNearestThreat(fakePlayer, 16.0D)
                     : null;
 
             if (combatPreset != null) {
                 manageCombatInventory(fakePlayer, combatPreset);
+                ItemEntity desiredPickup = findDesiredPickup(fakePlayer, combatPreset);
                 if (brain.healCooldownTicks > 0) {
                     brain.healCooldownTicks--;
                 }
@@ -1392,6 +1394,18 @@ public final class PlayerBatchService {
                         }
                         return;
                     }
+                    if (desiredPickup != null && isHealingPickup(desiredPickup.getItem())) {
+                        prepareInventorySpaceFor(fakePlayer, desiredPickup.getItem(), combatPreset);
+                        lookAtTarget(fakePlayer, desiredPickup);
+                        moveTowardTarget(fakePlayer, desiredPickup, 1.0D, 0.50D);
+                        return;
+                    }
+                }
+                if (desiredPickup != null) {
+                    prepareInventorySpaceFor(fakePlayer, desiredPickup.getItem(), combatPreset);
+                    lookAtTarget(fakePlayer, desiredPickup);
+                    moveTowardTarget(fakePlayer, desiredPickup, 1.0D, 0.50D);
+                    return;
                 }
             }
 
@@ -1440,7 +1454,7 @@ public final class PlayerBatchService {
                     .filter(player -> !player.getUUID().equals(source.getUUID()))
                     .filter(player -> !(player instanceof EntityPlayerMPFake))
                     .filter(player -> player.level() == source.level())
-                    .filter(player -> player.distanceToSqr(source) <= range * range)
+                    .filter(player -> range <= 0.0D || player.distanceToSqr(source) <= range * range)
                     .min(Comparator.comparingDouble(player -> player.distanceToSqr(source)))
                     .orElse(null);
         }
@@ -1518,6 +1532,111 @@ public final class PlayerBatchService {
             ensureTotemOrShield(fakePlayer, combatPreset);
             equipBestArmor(fakePlayer);
             equipBestWeapon(fakePlayer);
+        }
+
+        private ItemEntity findDesiredPickup(EntityPlayerMPFake fakePlayer, CombatPresetSpec combatPreset) {
+            return fakePlayer.level().getEntitiesOfClass(ItemEntity.class, fakePlayer.getBoundingBox().inflate(20.0D), itemEntity ->
+                            itemEntity.isAlive() && !itemEntity.getItem().isEmpty() && isDesiredPickup(fakePlayer, itemEntity.getItem(), combatPreset))
+                    .stream()
+                    .min(Comparator.comparingDouble(itemEntity -> itemEntity.distanceToSqr(fakePlayer)))
+                    .orElse(null);
+        }
+
+        private boolean isDesiredPickup(EntityPlayerMPFake fakePlayer, ItemStack stack, CombatPresetSpec combatPreset) {
+            if (stack == null || stack.isEmpty()) {
+                return false;
+            }
+            if (combatPreset.selfHealEnabled() && isHealingPickup(stack)) {
+                return true;
+            }
+            if (stack.is(Items.TOTEM_OF_UNDYING) || stack.is(Items.SHIELD)) {
+                return true;
+            }
+            for (EquipmentSlot slot : List.of(EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET)) {
+                if (ArmorEvaluation.forStack(stack, slot).isBetterThan(ArmorEvaluation.forStack(fakePlayer.getItemBySlot(slot), slot))) {
+                    return true;
+                }
+            }
+            return WeaponEvaluation.forStack(stack).isBetterThan(WeaponEvaluation.forStack(fakePlayer.getMainHandItem()));
+        }
+
+        private boolean isHealingPickup(ItemStack stack) {
+            return HealingChoice.forStack(stack, -1) != null;
+        }
+
+        private void prepareInventorySpaceFor(EntityPlayerMPFake fakePlayer, ItemStack desiredStack, CombatPresetSpec combatPreset) {
+            if (hasInventorySpace(fakePlayer, desiredStack)) {
+                return;
+            }
+            int dropSlot = findLeastUsefulInventorySlot(fakePlayer, desiredStack, combatPreset);
+            if (dropSlot < 0) {
+                return;
+            }
+            ItemStack dropped = fakePlayer.getInventory().removeItemNoUpdate(dropSlot);
+            if (!dropped.isEmpty()) {
+                fakePlayer.drop(dropped, false);
+            }
+        }
+
+        private boolean hasInventorySpace(EntityPlayerMPFake fakePlayer, ItemStack desiredStack) {
+            for (int slot = 0; slot < fakePlayer.getInventory().getContainerSize(); slot++) {
+                ItemStack current = fakePlayer.getInventory().getItem(slot);
+                if (current.isEmpty()) {
+                    return true;
+                }
+                if (ItemStack.isSameItemSameComponents(current, desiredStack) && current.getCount() < current.getMaxStackSize()) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private int findLeastUsefulInventorySlot(EntityPlayerMPFake fakePlayer, ItemStack desiredStack, CombatPresetSpec combatPreset) {
+            int candidateSlot = -1;
+            int candidateScore = Integer.MAX_VALUE;
+            int desiredScore = usefulnessScore(fakePlayer, desiredStack, combatPreset);
+            for (int slot = 0; slot < fakePlayer.getInventory().getContainerSize(); slot++) {
+                ItemStack current = fakePlayer.getInventory().getItem(slot);
+                if (current.isEmpty()) {
+                    return slot;
+                }
+                int currentScore = usefulnessScore(fakePlayer, current, combatPreset);
+                if (currentScore < desiredScore && currentScore < candidateScore) {
+                    candidateScore = currentScore;
+                    candidateSlot = slot;
+                }
+            }
+            return candidateSlot;
+        }
+
+        private int usefulnessScore(EntityPlayerMPFake fakePlayer, ItemStack stack, CombatPresetSpec combatPreset) {
+            if (stack == null || stack.isEmpty()) {
+                return -1;
+            }
+            if (stack.is(Items.TOTEM_OF_UNDYING)) {
+                return 100;
+            }
+            if (stack.is(Items.SHIELD)) {
+                return 80;
+            }
+            if (combatPreset.selfHealEnabled() && isHealingPickup(stack)) {
+                return 70;
+            }
+
+            int bestArmorScore = -1;
+            for (EquipmentSlot slot : List.of(EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET)) {
+                bestArmorScore = Math.max(bestArmorScore, ArmorEvaluation.forStack(stack, slot).materialScore());
+            }
+            if (bestArmorScore >= 0) {
+                return 40 + bestArmorScore + (stack.isEnchanted() ? 10 : 0);
+            }
+
+            WeaponEvaluation weapon = WeaponEvaluation.forStack(stack);
+            if (weapon.materialScore() >= 0) {
+                return 30 + weapon.materialScore() + weapon.typeScore() + (weapon.enchanted() ? 10 : 0);
+            }
+
+            return 0;
         }
 
         private void ensureTotemOrShield(EntityPlayerMPFake fakePlayer, CombatPresetSpec combatPreset) {
@@ -1603,17 +1722,27 @@ public final class PlayerBatchService {
 
         private HealingChoice findBestHealingChoice(EntityPlayerMPFake fakePlayer) {
             HealingChoice best = null;
+            best = betterHealingChoice(best, HealingChoice.forStack(fakePlayer.getOffhandItem(), -2));
             for (int slot = 0; slot < fakePlayer.getInventory().getContainerSize(); slot++) {
-                HealingChoice candidate = HealingChoice.forStack(fakePlayer.getInventory().getItem(slot), slot);
-                if (candidate != null && (best == null || candidate.score() > best.score())) {
-                    best = candidate;
-                }
+                best = betterHealingChoice(best, HealingChoice.forStack(fakePlayer.getInventory().getItem(slot), slot));
             }
             return best;
         }
 
+        private HealingChoice betterHealingChoice(HealingChoice currentBest, HealingChoice candidate) {
+            if (candidate == null) {
+                return currentBest;
+            }
+            if (currentBest == null || candidate.score() > currentBest.score()) {
+                return candidate;
+            }
+            return currentBest;
+        }
+
         private boolean useHealingChoice(EntityPlayerMPFake fakePlayer, HealingChoice healingChoice) {
-            ItemStack stack = fakePlayer.getInventory().getItem(healingChoice.slot());
+            ItemStack stack = healingChoice.slot() == -2
+                    ? fakePlayer.getOffhandItem()
+                    : fakePlayer.getInventory().getItem(healingChoice.slot());
             if (stack.isEmpty()) {
                 return false;
             }
