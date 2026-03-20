@@ -639,10 +639,17 @@ public final class PlayerBatchService {
             if (names.isEmpty()) {
                 return 0;
             }
-            queue.addLast(new SummonBatch(server, source, names, formation));
-            debug("Queued summon batch with {} names using {} formation", names.size(), formation);
+            List<String> reservedNames = reservedNames();
+            List<String> uniqueNames = new ArrayList<>(names.size());
+            for (String name : names) {
+                String uniqueName = makeUniqueSummonName(name, reservedNames);
+                uniqueNames.add(uniqueName);
+                reservedNames.add(uniqueName);
+            }
+            queue.addLast(new SummonBatch(server, source, uniqueNames, formation));
+            debug("Queued summon batch with {} names using {} formation", uniqueNames.size(), formation);
             broadcast(false);
-            return names.size();
+            return uniqueNames.size();
         }
 
         private void tick() {
@@ -1046,6 +1053,20 @@ public final class PlayerBatchService {
             subscribers.removeIf(uuid -> server.getPlayerList().getPlayer(uuid) == null);
         }
 
+        private List<String> reservedNames() {
+            List<String> reserved = new ArrayList<>();
+            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                reserved.add(player.getGameProfile().name().toLowerCase(Locale.ROOT));
+            }
+            if (activeBatch != null) {
+                activeBatch.collectReservedNames(reserved);
+            }
+            for (SummonBatch queuedBatch : queue) {
+                queuedBatch.collectReservedNames(reserved);
+            }
+            return reserved;
+        }
+
         private void shutdown() {
             if (activeBatch != null) {
                 activeBatch.discard();
@@ -1229,6 +1250,15 @@ public final class PlayerBatchService {
                 }
             }
             pendingTagNames.removeAll(tagged);
+        }
+
+        private void collectReservedNames(Collection<String> reserved) {
+            for (SummonEntry entry : remainingEntries) {
+                reserved.add(entry.name().toLowerCase(Locale.ROOT));
+            }
+            for (String pendingTagName : pendingTagNames) {
+                reserved.add(pendingTagName.toLowerCase(Locale.ROOT));
+            }
         }
 
         private BatchProgress progress() {
@@ -1489,6 +1519,29 @@ public final class PlayerBatchService {
             case "single_block", "singleblock" -> "single block";
             default -> null;
         };
+    }
+
+    private static String makeUniqueSummonName(String requestedName, Collection<String> reservedLowercaseNames) {
+        String baseName = requestedName == null || requestedName.isBlank() ? "PlayerBatch" : requestedName.trim();
+        String normalizedBase = baseName.toLowerCase(Locale.ROOT);
+        if (!reservedLowercaseNames.contains(normalizedBase)) {
+            return baseName;
+        }
+
+        String prefix = baseName.length() > 12 ? baseName.substring(0, 12) : baseName;
+        for (int suffixNumber = 2; suffixNumber < 10_000; suffixNumber++) {
+            String candidate = prefix + suffixNumber;
+            if (candidate.length() > 16) {
+                int digits = Integer.toString(suffixNumber).length();
+                int maxPrefixLength = Math.max(1, 16 - digits);
+                candidate = prefix.substring(0, Math.min(prefix.length(), maxPrefixLength)) + suffixNumber;
+            }
+            String loweredCandidate = candidate.toLowerCase(Locale.ROOT);
+            if (!reservedLowercaseNames.contains(loweredCandidate)) {
+                return candidate;
+            }
+        }
+        return "PB" + Math.abs(baseName.hashCode() % 1_000_000);
     }
 
     private static String suffix(int count) {
