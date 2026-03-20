@@ -104,7 +104,7 @@ public final class PlayerBatchScreen extends Screen {
         int left = panelLeft() + 18;
         int top = panelTop() + 58;
         int footerY = panelTop() + panelHeight() - 30;
-        int footerGap = 12;
+        int footerGap = 8;
         int distributionRowHeight = 20;
         int distributionRowSpacing = 14;
         int distributionLabelGap = 12;
@@ -201,7 +201,7 @@ public final class PlayerBatchScreen extends Screen {
 
     private void renderBotSummoning(GuiGraphics guiGraphics, int left, int top) {
         int footerY = panelTop() + panelHeight() - 30;
-        int footerGap = 12;
+        int footerGap = 8;
         int distributionRowHeight = 20;
         int distributionRowSpacing = 14;
         int distributionLabelGap = 12;
