@@ -25,6 +25,30 @@ public class PlayerBatchScreen extends Screen {
     private final List<AbstractWidget> customizationWidgets = new ArrayList<>();
     private final List<AbstractWidget> debugWidgets = new ArrayList<>();
     private static final List<String> FORMATION_OPTIONS = List.of("circle", "square", "triangle", "random", "single block");
+    private static final List<String> ACTION_OPTIONS = List.of(
+            "attack once",
+            "attack continuous",
+            "jump once",
+            "jump continuous",
+            "use once",
+            "use continuous",
+            "drop all",
+            "drop stack",
+            "swapHands",
+            "stop",
+            "sneak",
+            "unsneak",
+            "sprint",
+            "unsprint",
+            "turn left",
+            "turn right",
+            "look north",
+            "look south",
+            "look east",
+            "look west",
+            "look up",
+            "look down"
+    );
 
     private Tab activeTab = Tab.SUMMONING;
     private PlayerBatchService.PlayerBatchSnapshot snapshot;
@@ -211,13 +235,26 @@ public class PlayerBatchScreen extends Screen {
 
         actionBox = register(addRenderableWidget(new EditBox(font, left, top + 228, 180, 20, Component.literal("Action"))), customizationWidgets);
         actionBox.setValue(preferences.action());
-        actionBox.setResponder(value -> savePreferences());
+        actionBox.setResponder(value -> {
+            updateActionAutocomplete();
+            savePreferences();
+        });
+        updateActionAutocomplete();
+        register(addRenderableWidget(Button.builder(Component.literal("Complete"), button -> {
+            String completion = currentActionCompletion();
+            if (completion != null) {
+                actionBox.setValue(completion);
+                actionBox.moveCursorToEnd(false);
+                updateActionAutocomplete();
+                savePreferences();
+            }
+        }).bounds(left + 186, top + 228, 92, 20).build()), customizationWidgets);
         register(addRenderableWidget(Button.builder(Component.literal("Run Action"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.RUN_ACTION, actionBox.getValue(), "", 0, false
-        ))).bounds(left + 186, top + 228, 92, 20).build()), customizationWidgets);
+        ))).bounds(left + 284, top + 228, 102, 20).build()), customizationWidgets);
         register(addRenderableWidget(Button.builder(Component.literal("Clear Effects"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.CLEAR_SELECTED_EFFECTS, "", "", 0, false
-        ))).bounds(left + 284, top + 228, 102, 20).build()), customizationWidgets);
+        ))).bounds(left + 244, top + 254, 112, 20).build()), customizationWidgets);
 
         directionBox = register(addRenderableWidget(new EditBox(font, left, top + 254, 84, 20, Component.literal("Direction"))), customizationWidgets);
         directionBox.setValue(preferences.direction());
@@ -227,7 +264,7 @@ public class PlayerBatchScreen extends Screen {
         blockBox.setResponder(value -> savePreferences());
         register(addRenderableWidget(Button.builder(Component.literal("Teleport Selected"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.TELEPORT_SELECTION, directionBox.getValue(), blockBox.getValue(), 0, false
-        ))).bounds(left + 196, top + 254, 126, 20).build()), customizationWidgets);
+        ))).bounds(left + 196, top + 280, 126, 20).build()), customizationWidgets);
     }
 
     private void initDebugTab(int left, int top) {
@@ -304,6 +341,7 @@ public class PlayerBatchScreen extends Screen {
         guiGraphics.drawString(font, "Selection, groups, AI mode assignment, item/armor editing, effects, and teleport controls.", left, top + 68, 0xC3CED7);
         guiGraphics.drawString(font, "Supported AI modes: idle, combat, patrol, guard, follow, flee", left, top + 156, 0x9BE5B8);
         guiGraphics.drawString(font, "Item slots: head, chest, legs, feet, mainhand, offhand", left, top + 172, 0x9BE5B8);
+        guiGraphics.drawString(font, "Action autocomplete: type a command and use the Complete button for the current suggestion.", left, top + 188, 0x9BE5B8);
         guiGraphics.drawString(font, "Groups: " + (snapshot.groups().isEmpty() ? "none yet" : String.join(" | ", snapshot.groups())), left, top + 290, 0xA8E8D2);
         guiGraphics.drawString(font, "Selected bots (" + snapshot.selectedNames().size() + "): " + selectedSummary(), left, top + 306, 0xBFD7E6);
         guiGraphics.drawString(font, "Full inventory pages, enchant editing, and wand area selection are still pending backend implementation.", left, top + 322, 0xE8C89C);
@@ -416,6 +454,45 @@ public class PlayerBatchScreen extends Screen {
             summary += " +" + (snapshot.selectedNames().size() - displayCount) + " more";
         }
         return summary;
+    }
+
+    private void updateActionAutocomplete() {
+        if (actionBox == null) {
+            return;
+        }
+        String completion = currentActionCompletion();
+        if (completion == null) {
+            actionBox.setSuggestion(null);
+            return;
+        }
+        String currentValue = actionBox.getValue();
+        if (completion.equals(currentValue)) {
+            actionBox.setSuggestion(null);
+            return;
+        }
+        actionBox.setSuggestion(completion.substring(Math.min(currentValue.length(), completion.length())));
+    }
+
+    private String currentActionCompletion() {
+        if (actionBox == null) {
+            return null;
+        }
+        String currentValue = actionBox.getValue();
+        String normalized = currentValue == null ? "" : currentValue.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            return ACTION_OPTIONS.get(0);
+        }
+        for (String option : ACTION_OPTIONS) {
+            if (option.startsWith(normalized)) {
+                return option;
+            }
+        }
+        for (String option : ACTION_OPTIONS) {
+            if (option.contains(normalized)) {
+                return option;
+            }
+        }
+        return null;
     }
 
     private int parseInt(String raw, int fallback) {
