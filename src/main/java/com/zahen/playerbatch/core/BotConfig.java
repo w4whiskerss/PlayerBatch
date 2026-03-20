@@ -5,16 +5,23 @@ import net.minecraft.world.entity.EquipmentSlot;
 import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 
 public final class BotConfig {
     private final String formation;
     private final BotLoadout loadout;
+    private final List<DistributionRule> distributions;
 
     public BotConfig(String formation, BotLoadout loadout) {
+        this(formation, loadout, List.of());
+    }
+
+    public BotConfig(String formation, BotLoadout loadout, List<DistributionRule> distributions) {
         this.formation = formation == null || formation.isBlank() ? "circle" : formation;
         this.loadout = loadout == null ? new BotLoadout() : loadout;
+        this.distributions = distributions == null ? List.of() : List.copyOf(distributions);
     }
 
     public String formation() {
@@ -23,6 +30,10 @@ public final class BotConfig {
 
     public BotLoadout loadout() {
         return loadout;
+    }
+
+    public List<DistributionRule> distributions() {
+        return distributions;
     }
 
     public String encode() {
@@ -46,6 +57,12 @@ public final class BotConfig {
             properties.setProperty("effect." + index + ".id", effect.effectId());
             properties.setProperty("effect." + index + ".duration", Integer.toString(effect.durationSeconds()));
             properties.setProperty("effect." + index + ".amp", Integer.toString(effect.amplifier()));
+        }
+        properties.setProperty("distribution.count", Integer.toString(distributions.size()));
+        for (int index = 0; index < distributions.size(); index++) {
+            DistributionRule rule = distributions.get(index);
+            properties.setProperty("distribution." + index + ".percent", Integer.toString(rule.percent()));
+            rule.loadout().writeTo(properties, "distribution." + index + ".");
         }
         try (StringWriter writer = new StringWriter()) {
             properties.store(writer, "PlayerBatch summon config");
@@ -96,7 +113,16 @@ public final class BotConfig {
                 ));
             }
         }
-        return new BotConfig(properties.getProperty("formation", "circle"), loadout);
+        List<DistributionRule> distributions = new ArrayList<>();
+        int distributionCount = parseInt(properties.getProperty("distribution.count"), 0);
+        for (int index = 0; index < distributionCount; index++) {
+            int percent = parseInt(properties.getProperty("distribution." + index + ".percent"), 0);
+            BotLoadout distributionLoadout = BotLoadout.readFrom(properties, "distribution." + index + ".");
+            if (percent > 0 && !distributionLoadout.isEmpty()) {
+                distributions.add(new DistributionRule(percent, distributionLoadout));
+            }
+        }
+        return new BotConfig(properties.getProperty("formation", "circle"), loadout, distributions);
     }
 
     private static void readSlot(Properties properties, String key, EquipmentSlot slot, BotLoadout loadout) {
@@ -116,5 +142,12 @@ public final class BotConfig {
 
     public static BotConfig empty() {
         return new BotConfig("circle", new BotLoadout());
+    }
+
+    public record DistributionRule(int percent, BotLoadout loadout) {
+        public DistributionRule {
+            percent = Math.max(0, Math.min(100, percent));
+            loadout = loadout == null ? new BotLoadout() : loadout;
+        }
     }
 }

@@ -14,6 +14,7 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
 public final class BotLoadout {
     private final Map<EquipmentSlot, StackSpec> equipment = new EnumMap<>(EquipmentSlot.class);
@@ -34,6 +35,95 @@ public final class BotLoadout {
 
     public boolean isEmpty() {
         return equipment.isEmpty() && hotbar.isEmpty() && effects.isEmpty();
+    }
+
+    public BotLoadout copy() {
+        BotLoadout copy = new BotLoadout();
+        copy.equipment.putAll(equipment);
+        copy.hotbar.putAll(hotbar);
+        copy.effects.addAll(effects);
+        return copy;
+    }
+
+    public BotLoadout mergedWith(BotLoadout overrides) {
+        if (overrides == null || overrides.isEmpty()) {
+            return copy();
+        }
+        BotLoadout merged = copy();
+        merged.equipment.putAll(overrides.equipment);
+        merged.hotbar.putAll(overrides.hotbar);
+        merged.effects.addAll(overrides.effects);
+        return merged;
+    }
+
+    public void writeTo(Properties properties, String prefix) {
+        for (Map.Entry<EquipmentSlot, StackSpec> entry : equipment.entrySet()) {
+            String key = switch (entry.getKey()) {
+                case HEAD -> "head";
+                case CHEST -> "chest";
+                case LEGS -> "legs";
+                case FEET -> "feet";
+                case MAINHAND -> "mainhand";
+                case OFFHAND -> "offhand";
+                default -> null;
+            };
+            if (key != null) {
+                properties.setProperty(prefix + key + ".item", entry.getValue().itemId());
+                properties.setProperty(prefix + key + ".count", Integer.toString(entry.getValue().count()));
+            }
+        }
+        for (Map.Entry<Integer, StackSpec> entry : hotbar.entrySet()) {
+            properties.setProperty(prefix + "hotbar." + entry.getKey() + ".item", entry.getValue().itemId());
+            properties.setProperty(prefix + "hotbar." + entry.getKey() + ".count", Integer.toString(entry.getValue().count()));
+        }
+        for (int index = 0; index < effects.size(); index++) {
+            EffectSpec effect = effects.get(index);
+            properties.setProperty(prefix + "effect." + index + ".id", effect.effectId());
+            properties.setProperty(prefix + "effect." + index + ".duration", Integer.toString(effect.durationSeconds()));
+            properties.setProperty(prefix + "effect." + index + ".amp", Integer.toString(effect.amplifier()));
+        }
+    }
+
+    public static BotLoadout readFrom(Properties properties, String prefix) {
+        BotLoadout loadout = new BotLoadout();
+        readSlot(properties, prefix, "head", EquipmentSlot.HEAD, loadout);
+        readSlot(properties, prefix, "chest", EquipmentSlot.CHEST, loadout);
+        readSlot(properties, prefix, "legs", EquipmentSlot.LEGS, loadout);
+        readSlot(properties, prefix, "feet", EquipmentSlot.FEET, loadout);
+        readSlot(properties, prefix, "mainhand", EquipmentSlot.MAINHAND, loadout);
+        readSlot(properties, prefix, "offhand", EquipmentSlot.OFFHAND, loadout);
+        for (int index = 0; index < 9; index++) {
+            String itemId = properties.getProperty(prefix + "hotbar." + index + ".item", "").trim();
+            if (!itemId.isEmpty()) {
+                loadout.hotbar.put(index, new StackSpec(itemId, parseInt(properties.getProperty(prefix + "hotbar." + index + ".count"), 1)));
+            }
+        }
+        for (int index = 0; index < 12; index++) {
+            String effectId = properties.getProperty(prefix + "effect." + index + ".id", "").trim();
+            if (!effectId.isEmpty()) {
+                loadout.effects.add(new EffectSpec(
+                        effectId,
+                        parseInt(properties.getProperty(prefix + "effect." + index + ".duration"), 30),
+                        parseInt(properties.getProperty(prefix + "effect." + index + ".amp"), 0)
+                ));
+            }
+        }
+        return loadout;
+    }
+
+    private static void readSlot(Properties properties, String prefix, String key, EquipmentSlot slot, BotLoadout loadout) {
+        String itemId = properties.getProperty(prefix + key + ".item", "").trim();
+        if (!itemId.isEmpty()) {
+            loadout.equipment.put(slot, new StackSpec(itemId, parseInt(properties.getProperty(prefix + key + ".count"), 1)));
+        }
+    }
+
+    private static int parseInt(String raw, int fallback) {
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (Exception ignored) {
+            return fallback;
+        }
     }
 
     public void applyTo(EntityPlayerMPFake fakePlayer) {

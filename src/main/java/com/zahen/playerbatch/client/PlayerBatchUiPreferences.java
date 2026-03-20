@@ -27,6 +27,15 @@ public final class PlayerBatchUiPreferences {
     private static final String KEY_SUMMON_EFFECT_ID = "summonEffectId";
     private static final String KEY_SUMMON_EFFECT_DURATION = "summonEffectDuration";
     private static final String KEY_SUMMON_EFFECT_AMPLIFIER = "summonEffectAmplifier";
+    private static final String KEY_DISTRIBUTION_ONE_PERCENT = "distributionOnePercent";
+    private static final String KEY_DISTRIBUTION_ONE_ARMOR = "distributionOneArmor";
+    private static final String KEY_DISTRIBUTION_ONE_WEAPON = "distributionOneWeapon";
+    private static final String KEY_DISTRIBUTION_TWO_PERCENT = "distributionTwoPercent";
+    private static final String KEY_DISTRIBUTION_TWO_ARMOR = "distributionTwoArmor";
+    private static final String KEY_DISTRIBUTION_TWO_WEAPON = "distributionTwoWeapon";
+    private static final String KEY_DISTRIBUTION_THREE_PERCENT = "distributionThreePercent";
+    private static final String KEY_DISTRIBUTION_THREE_ARMOR = "distributionThreeArmor";
+    private static final String KEY_DISTRIBUTION_THREE_WEAPON = "distributionThreeWeapon";
     private static final String KEY_SELECT_RANGE = "selectRange";
     private static final String KEY_SELECT_CLOSEST = "selectClosest";
     private static final String KEY_GROUP_NAME = "groupName";
@@ -58,6 +67,15 @@ public final class PlayerBatchUiPreferences {
     private String summonEffectId = "speed";
     private String summonEffectDuration = "30";
     private String summonEffectAmplifier = "0";
+    private String distributionOnePercent = "50";
+    private String distributionOneArmor = "diamond";
+    private String distributionOneWeapon = "diamond_sword";
+    private String distributionTwoPercent = "30";
+    private String distributionTwoArmor = "iron";
+    private String distributionTwoWeapon = "iron_sword";
+    private String distributionThreePercent = "20";
+    private String distributionThreeArmor = "netherite";
+    private String distributionThreeWeapon = "netherite_sword";
     private String selectRange = "16";
     private String selectClosest = "10";
     private String groupName = "alpha";
@@ -105,6 +123,15 @@ public final class PlayerBatchUiPreferences {
         preferences.summonEffectId = read(properties, KEY_SUMMON_EFFECT_ID, preferences.summonEffectId);
         preferences.summonEffectDuration = read(properties, KEY_SUMMON_EFFECT_DURATION, preferences.summonEffectDuration);
         preferences.summonEffectAmplifier = read(properties, KEY_SUMMON_EFFECT_AMPLIFIER, preferences.summonEffectAmplifier);
+        preferences.distributionOnePercent = read(properties, KEY_DISTRIBUTION_ONE_PERCENT, preferences.distributionOnePercent);
+        preferences.distributionOneArmor = read(properties, KEY_DISTRIBUTION_ONE_ARMOR, preferences.distributionOneArmor);
+        preferences.distributionOneWeapon = read(properties, KEY_DISTRIBUTION_ONE_WEAPON, preferences.distributionOneWeapon);
+        preferences.distributionTwoPercent = read(properties, KEY_DISTRIBUTION_TWO_PERCENT, preferences.distributionTwoPercent);
+        preferences.distributionTwoArmor = read(properties, KEY_DISTRIBUTION_TWO_ARMOR, preferences.distributionTwoArmor);
+        preferences.distributionTwoWeapon = read(properties, KEY_DISTRIBUTION_TWO_WEAPON, preferences.distributionTwoWeapon);
+        preferences.distributionThreePercent = read(properties, KEY_DISTRIBUTION_THREE_PERCENT, preferences.distributionThreePercent);
+        preferences.distributionThreeArmor = read(properties, KEY_DISTRIBUTION_THREE_ARMOR, preferences.distributionThreeArmor);
+        preferences.distributionThreeWeapon = read(properties, KEY_DISTRIBUTION_THREE_WEAPON, preferences.distributionThreeWeapon);
         preferences.selectRange = read(properties, KEY_SELECT_RANGE, preferences.selectRange);
         preferences.selectClosest = read(properties, KEY_SELECT_CLOSEST, preferences.selectClosest);
         preferences.groupName = read(properties, KEY_GROUP_NAME, preferences.groupName);
@@ -142,6 +169,15 @@ public final class PlayerBatchUiPreferences {
         properties.setProperty(KEY_SUMMON_EFFECT_ID, summonEffectId);
         properties.setProperty(KEY_SUMMON_EFFECT_DURATION, summonEffectDuration);
         properties.setProperty(KEY_SUMMON_EFFECT_AMPLIFIER, summonEffectAmplifier);
+        properties.setProperty(KEY_DISTRIBUTION_ONE_PERCENT, distributionOnePercent);
+        properties.setProperty(KEY_DISTRIBUTION_ONE_ARMOR, distributionOneArmor);
+        properties.setProperty(KEY_DISTRIBUTION_ONE_WEAPON, distributionOneWeapon);
+        properties.setProperty(KEY_DISTRIBUTION_TWO_PERCENT, distributionTwoPercent);
+        properties.setProperty(KEY_DISTRIBUTION_TWO_ARMOR, distributionTwoArmor);
+        properties.setProperty(KEY_DISTRIBUTION_TWO_WEAPON, distributionTwoWeapon);
+        properties.setProperty(KEY_DISTRIBUTION_THREE_PERCENT, distributionThreePercent);
+        properties.setProperty(KEY_DISTRIBUTION_THREE_ARMOR, distributionThreeArmor);
+        properties.setProperty(KEY_DISTRIBUTION_THREE_WEAPON, distributionThreeWeapon);
         properties.setProperty(KEY_SELECT_RANGE, selectRange);
         properties.setProperty(KEY_SELECT_CLOSEST, selectClosest);
         properties.setProperty(KEY_GROUP_NAME, groupName);
@@ -283,6 +319,78 @@ public final class PlayerBatchUiPreferences {
 
     public void setSummonEffectAmplifier(String summonEffectAmplifier) {
         this.summonEffectAmplifier = summonEffectAmplifier;
+    }
+
+    public String distributionOnePercent() {
+        return distributionOnePercent;
+    }
+
+    public void setDistributionOnePercent(String distributionOnePercent) {
+        this.distributionOnePercent = distributionOnePercent;
+    }
+
+    public String distributionOneArmor() {
+        return distributionOneArmor;
+    }
+
+    public void setDistributionOneArmor(String distributionOneArmor) {
+        this.distributionOneArmor = distributionOneArmor;
+    }
+
+    public String distributionOneWeapon() {
+        return distributionOneWeapon;
+    }
+
+    public void setDistributionOneWeapon(String distributionOneWeapon) {
+        this.distributionOneWeapon = distributionOneWeapon;
+    }
+
+    public String distributionTwoPercent() {
+        return distributionTwoPercent;
+    }
+
+    public void setDistributionTwoPercent(String distributionTwoPercent) {
+        this.distributionTwoPercent = distributionTwoPercent;
+    }
+
+    public String distributionTwoArmor() {
+        return distributionTwoArmor;
+    }
+
+    public void setDistributionTwoArmor(String distributionTwoArmor) {
+        this.distributionTwoArmor = distributionTwoArmor;
+    }
+
+    public String distributionTwoWeapon() {
+        return distributionTwoWeapon;
+    }
+
+    public void setDistributionTwoWeapon(String distributionTwoWeapon) {
+        this.distributionTwoWeapon = distributionTwoWeapon;
+    }
+
+    public String distributionThreePercent() {
+        return distributionThreePercent;
+    }
+
+    public void setDistributionThreePercent(String distributionThreePercent) {
+        this.distributionThreePercent = distributionThreePercent;
+    }
+
+    public String distributionThreeArmor() {
+        return distributionThreeArmor;
+    }
+
+    public void setDistributionThreeArmor(String distributionThreeArmor) {
+        this.distributionThreeArmor = distributionThreeArmor;
+    }
+
+    public String distributionThreeWeapon() {
+        return distributionThreeWeapon;
+    }
+
+    public void setDistributionThreeWeapon(String distributionThreeWeapon) {
+        this.distributionThreeWeapon = distributionThreeWeapon;
     }
 
     public String selectRange() {

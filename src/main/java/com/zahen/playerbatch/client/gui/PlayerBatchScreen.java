@@ -29,9 +29,12 @@ public class PlayerBatchScreen extends Screen {
     private final List<AbstractWidget> summoningWidgets = new ArrayList<>();
     private final List<AbstractWidget> summoningSetupWidgets = new ArrayList<>();
     private final List<AbstractWidget> summoningLoadoutWidgets = new ArrayList<>();
+    private final List<AbstractWidget> summoningDistributionWidgets = new ArrayList<>();
     private final List<AbstractWidget> customizationWidgets = new ArrayList<>();
     private final List<AbstractWidget> debugWidgets = new ArrayList<>();
     private static final List<String> FORMATION_OPTIONS = List.of("circle", "square", "triangle", "random", "single block");
+    private static final List<String> ARMOR_MATERIAL_OPTIONS = List.of("none", "leather", "chainmail", "iron", "diamond", "netherite");
+    private static final List<String> WEAPON_OPTIONS = List.of("none", "wooden_sword", "stone_sword", "iron_sword", "diamond_sword", "netherite_sword", "bow", "crossbow", "trident");
     private static final List<String> ACTION_OPTIONS = List.of(
             "attack once",
             "attack continuous",
@@ -97,6 +100,21 @@ public class PlayerBatchScreen extends Screen {
     private EditBox summonEffectBox;
     private EditBox summonEffectDurationBox;
     private EditBox summonEffectAmplifierBox;
+    private EditBox distributionOnePercentBox;
+    private EditBox distributionTwoPercentBox;
+    private EditBox distributionThreePercentBox;
+    private Button distributionOneArmorButton;
+    private Button distributionTwoArmorButton;
+    private Button distributionThreeArmorButton;
+    private Button distributionOneWeaponButton;
+    private Button distributionTwoWeaponButton;
+    private Button distributionThreeWeaponButton;
+    private int distributionOneArmorIndex;
+    private int distributionTwoArmorIndex;
+    private int distributionThreeArmorIndex;
+    private int distributionOneWeaponIndex;
+    private int distributionTwoWeaponIndex;
+    private int distributionThreeWeaponIndex;
 
     private EditBox rangeBox;
     private EditBox closestBox;
@@ -215,6 +233,23 @@ public class PlayerBatchScreen extends Screen {
         summonEffectDurationBox = register(addRenderableWidget(new EditBox(font, left + 148, top + 160, 64, 20, Component.literal("Secs"))), summoningLoadoutWidgets);
         summonEffectAmplifierBox = register(addRenderableWidget(new EditBox(font, left + 220, top + 160, 64, 20, Component.literal("Amp"))), summoningLoadoutWidgets);
         initSummonLoadoutFields();
+
+        distributionOnePercentBox = register(addRenderableWidget(new EditBox(font, left, top + 72, 40, 20, Component.literal("%"))), summoningDistributionWidgets);
+        distributionTwoPercentBox = register(addRenderableWidget(new EditBox(font, left, top + 102, 40, 20, Component.literal("%"))), summoningDistributionWidgets);
+        distributionThreePercentBox = register(addRenderableWidget(new EditBox(font, left, top + 132, 40, 20, Component.literal("%"))), summoningDistributionWidgets);
+        distributionOneArmorButton = register(addRenderableWidget(Button.builder(Component.empty(), button -> cycleDistributionArmor(1))
+                .bounds(left + 48, top + 72, 102, 20).build()), summoningDistributionWidgets);
+        distributionTwoArmorButton = register(addRenderableWidget(Button.builder(Component.empty(), button -> cycleDistributionArmor(2))
+                .bounds(left + 48, top + 102, 102, 20).build()), summoningDistributionWidgets);
+        distributionThreeArmorButton = register(addRenderableWidget(Button.builder(Component.empty(), button -> cycleDistributionArmor(3))
+                .bounds(left + 48, top + 132, 102, 20).build()), summoningDistributionWidgets);
+        distributionOneWeaponButton = register(addRenderableWidget(Button.builder(Component.empty(), button -> cycleDistributionWeapon(1))
+                .bounds(left + 158, top + 72, 160, 20).build()), summoningDistributionWidgets);
+        distributionTwoWeaponButton = register(addRenderableWidget(Button.builder(Component.empty(), button -> cycleDistributionWeapon(2))
+                .bounds(left + 158, top + 102, 160, 20).build()), summoningDistributionWidgets);
+        distributionThreeWeaponButton = register(addRenderableWidget(Button.builder(Component.empty(), button -> cycleDistributionWeapon(3))
+                .bounds(left + 158, top + 132, 160, 20).build()), summoningDistributionWidgets);
+        initDistributionFields();
     }
 
     private void initCustomizationTab(int left, int top) {
@@ -423,9 +458,13 @@ public class PlayerBatchScreen extends Screen {
             guiGraphics.drawString(font, "Example: stone_sword,bow,bread", left, top + 116, 0xA8E8D2);
             return;
         }
-        guiGraphics.drawString(font, "Distribution pane", left, top + 68, 0xC3CED7);
-        guiGraphics.drawString(font, "BotConfig and summon-time loadouts are live now; percent split rules are the next slice.", left, top + 84, 0xE8C89C);
-        guiGraphics.drawString(font, "This pane is where preset-driven 50/30/20-style loadout spreads will land.", left, top + 100, 0xE8C89C);
+        guiGraphics.drawString(font, "Distribution pane: split the batch into pre-spawn gear variants.", left, top + 38, 0xC3CED7);
+        guiGraphics.drawString(font, "The current Loadout pane is the base setup. These rows override armor + weapon for a percentage of bots.", left, top + 54, 0x9BE5B8);
+        guiGraphics.drawString(font, "Row 1", left, top + 78, 0xEBDCA9);
+        guiGraphics.drawString(font, "Row 2", left, top + 108, 0xEBDCA9);
+        guiGraphics.drawString(font, "Row 3", left, top + 138, 0xEBDCA9);
+        guiGraphics.drawString(font, "Remaining " + distributionRemainderPercent() + "% keeps the base loadout exactly as configured.", left, top + 172, distributionRemainderPercent() < 0 ? 0xFF9B8D : 0xA8E8D2);
+        guiGraphics.drawString(font, "Example: 50 diamond + 30 iron + 20 netherite.", left, top + 188, 0xE8C89C);
     }
 
     private void renderCustomizationText(GuiGraphics guiGraphics, int left, int top) {
@@ -473,6 +512,7 @@ public class PlayerBatchScreen extends Screen {
         setTabVisible(summoningWidgets, activeTab == Tab.SUMMONING);
         setTabVisible(summoningSetupWidgets, activeTab == Tab.SUMMONING && activeSummonPane == SummonPane.SETUP);
         setTabVisible(summoningLoadoutWidgets, activeTab == Tab.SUMMONING && activeSummonPane == SummonPane.LOADOUT);
+        setTabVisible(summoningDistributionWidgets, activeTab == Tab.SUMMONING && activeSummonPane == SummonPane.DISTRIBUTION);
         setTabVisible(customizationWidgets, activeTab == Tab.CUSTOMIZATION);
         setTabVisible(debugWidgets, activeTab == Tab.DEBUG);
     }
@@ -533,6 +573,22 @@ public class PlayerBatchScreen extends Screen {
         summonEffectAmplifierBox.setResponder(value -> savePreferences());
     }
 
+    private void initDistributionFields() {
+        distributionOnePercentBox.setValue(preferences.distributionOnePercent());
+        distributionOnePercentBox.setResponder(value -> savePreferences());
+        distributionTwoPercentBox.setValue(preferences.distributionTwoPercent());
+        distributionTwoPercentBox.setResponder(value -> savePreferences());
+        distributionThreePercentBox.setValue(preferences.distributionThreePercent());
+        distributionThreePercentBox.setResponder(value -> savePreferences());
+        distributionOneArmorIndex = indexOfOrZero(ARMOR_MATERIAL_OPTIONS, preferences.distributionOneArmor());
+        distributionTwoArmorIndex = indexOfOrZero(ARMOR_MATERIAL_OPTIONS, preferences.distributionTwoArmor());
+        distributionThreeArmorIndex = indexOfOrZero(ARMOR_MATERIAL_OPTIONS, preferences.distributionThreeArmor());
+        distributionOneWeaponIndex = indexOfOrZero(WEAPON_OPTIONS, preferences.distributionOneWeapon());
+        distributionTwoWeaponIndex = indexOfOrZero(WEAPON_OPTIONS, preferences.distributionTwoWeapon());
+        distributionThreeWeaponIndex = indexOfOrZero(WEAPON_OPTIONS, preferences.distributionThreeWeapon());
+        updateDistributionButtons();
+    }
+
     private void bindSummonItemBox(EditBox box, String value) {
         box.setValue(value);
         box.setResponder(raw -> {
@@ -548,6 +604,41 @@ public class PlayerBatchScreen extends Screen {
             formationButton.setMessage(formationLabel());
         }
         savePreferences();
+    }
+
+    private void cycleDistributionArmor(int row) {
+        if (row == 1) {
+            distributionOneArmorIndex = (distributionOneArmorIndex + 1) % ARMOR_MATERIAL_OPTIONS.size();
+        } else if (row == 2) {
+            distributionTwoArmorIndex = (distributionTwoArmorIndex + 1) % ARMOR_MATERIAL_OPTIONS.size();
+        } else {
+            distributionThreeArmorIndex = (distributionThreeArmorIndex + 1) % ARMOR_MATERIAL_OPTIONS.size();
+        }
+        updateDistributionButtons();
+        savePreferences();
+    }
+
+    private void cycleDistributionWeapon(int row) {
+        if (row == 1) {
+            distributionOneWeaponIndex = (distributionOneWeaponIndex + 1) % WEAPON_OPTIONS.size();
+        } else if (row == 2) {
+            distributionTwoWeaponIndex = (distributionTwoWeaponIndex + 1) % WEAPON_OPTIONS.size();
+        } else {
+            distributionThreeWeaponIndex = (distributionThreeWeaponIndex + 1) % WEAPON_OPTIONS.size();
+        }
+        updateDistributionButtons();
+        savePreferences();
+    }
+
+    private void updateDistributionButtons() {
+        if (distributionOneArmorButton != null) {
+            distributionOneArmorButton.setMessage(Component.literal("Armor: " + distributionArmorValue(1)));
+            distributionTwoArmorButton.setMessage(Component.literal("Armor: " + distributionArmorValue(2)));
+            distributionThreeArmorButton.setMessage(Component.literal("Armor: " + distributionArmorValue(3)));
+            distributionOneWeaponButton.setMessage(Component.literal("Weapon: " + distributionWeaponValue(1)));
+            distributionTwoWeaponButton.setMessage(Component.literal("Weapon: " + distributionWeaponValue(2)));
+            distributionThreeWeaponButton.setMessage(Component.literal("Weapon: " + distributionWeaponValue(3)));
+        }
     }
 
     private void switchSummonPane(SummonPane pane) {
@@ -743,6 +834,11 @@ public class PlayerBatchScreen extends Screen {
         return index >= 0 ? index : 0;
     }
 
+    private int indexOfOrZero(List<String> options, String value) {
+        int index = options.indexOf((value == null ? "" : value).toLowerCase(Locale.ROOT));
+        return index >= 0 ? index : 0;
+    }
+
     private Tab parseTab(String rawTab) {
         try {
             return Tab.valueOf((rawTab == null ? Tab.SUMMONING.name() : rawTab).trim().toUpperCase(Locale.ROOT));
@@ -775,6 +871,15 @@ public class PlayerBatchScreen extends Screen {
         preferences.setSummonEffectId(normalizeRegistryValue(valueOf(summonEffectBox)));
         preferences.setSummonEffectDuration(valueOf(summonEffectDurationBox));
         preferences.setSummonEffectAmplifier(valueOf(summonEffectAmplifierBox));
+        preferences.setDistributionOnePercent(valueOf(distributionOnePercentBox));
+        preferences.setDistributionOneArmor(distributionArmorValue(1));
+        preferences.setDistributionOneWeapon(distributionWeaponValue(1));
+        preferences.setDistributionTwoPercent(valueOf(distributionTwoPercentBox));
+        preferences.setDistributionTwoArmor(distributionArmorValue(2));
+        preferences.setDistributionTwoWeapon(distributionWeaponValue(2));
+        preferences.setDistributionThreePercent(valueOf(distributionThreePercentBox));
+        preferences.setDistributionThreeArmor(distributionArmorValue(3));
+        preferences.setDistributionThreeWeapon(distributionWeaponValue(3));
         preferences.setSelectRange(valueOf(rangeBox));
         preferences.setSelectClosest(valueOf(closestBox));
         preferences.setGroupName(valueOf(groupBox));
@@ -814,7 +919,56 @@ public class PlayerBatchScreen extends Screen {
                     parseInt(valueOf(summonEffectAmplifierBox), 0)
             ));
         }
-        return new BotConfig(currentFormation(), loadout);
+        List<BotConfig.DistributionRule> distributions = new ArrayList<>();
+        addDistributionRule(distributions, distributionOnePercentBox, distributionArmorValue(1), distributionWeaponValue(1));
+        addDistributionRule(distributions, distributionTwoPercentBox, distributionArmorValue(2), distributionWeaponValue(2));
+        addDistributionRule(distributions, distributionThreePercentBox, distributionArmorValue(3), distributionWeaponValue(3));
+        return new BotConfig(currentFormation(), loadout, distributions);
+    }
+
+    private void addDistributionRule(List<BotConfig.DistributionRule> distributions, EditBox percentBox, String armorMaterial, String weapon) {
+        int percent = Math.max(0, parseInt(valueOf(percentBox), 0));
+        BotLoadout override = buildDistributionOverride(armorMaterial, weapon);
+        if (percent > 0 && !override.isEmpty()) {
+            distributions.add(new BotConfig.DistributionRule(percent, override));
+        }
+    }
+
+    private BotLoadout buildDistributionOverride(String armorMaterial, String weapon) {
+        BotLoadout override = new BotLoadout();
+        if (!"none".equals(armorMaterial)) {
+            override.equipment().put(EquipmentSlot.HEAD, new BotLoadout.StackSpec("minecraft:" + armorMaterial + "_helmet", 1));
+            override.equipment().put(EquipmentSlot.CHEST, new BotLoadout.StackSpec("minecraft:" + armorMaterial + "_chestplate", 1));
+            override.equipment().put(EquipmentSlot.LEGS, new BotLoadout.StackSpec("minecraft:" + armorMaterial + "_leggings", 1));
+            override.equipment().put(EquipmentSlot.FEET, new BotLoadout.StackSpec("minecraft:" + armorMaterial + "_boots", 1));
+        }
+        if (!"none".equals(weapon)) {
+            override.equipment().put(EquipmentSlot.MAINHAND, new BotLoadout.StackSpec(normalizeRegistryValue(weapon), 1));
+        }
+        return override;
+    }
+
+    private String distributionArmorValue(int row) {
+        return switch (row) {
+            case 1 -> ARMOR_MATERIAL_OPTIONS.get(distributionOneArmorIndex);
+            case 2 -> ARMOR_MATERIAL_OPTIONS.get(distributionTwoArmorIndex);
+            default -> ARMOR_MATERIAL_OPTIONS.get(distributionThreeArmorIndex);
+        };
+    }
+
+    private String distributionWeaponValue(int row) {
+        return switch (row) {
+            case 1 -> WEAPON_OPTIONS.get(distributionOneWeaponIndex);
+            case 2 -> WEAPON_OPTIONS.get(distributionTwoWeaponIndex);
+            default -> WEAPON_OPTIONS.get(distributionThreeWeaponIndex);
+        };
+    }
+
+    private int distributionRemainderPercent() {
+        return 100
+                - Math.max(0, parseInt(valueOf(distributionOnePercentBox), 0))
+                - Math.max(0, parseInt(valueOf(distributionTwoPercentBox), 0))
+                - Math.max(0, parseInt(valueOf(distributionThreePercentBox), 0));
     }
 
     private void putEquipment(BotLoadout loadout, EquipmentSlot slot, EditBox box) {

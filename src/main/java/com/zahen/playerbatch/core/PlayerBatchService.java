@@ -31,6 +31,7 @@ import net.minecraft.world.phys.Vec3;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.EnumSet;
@@ -42,6 +43,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -1376,6 +1378,7 @@ public final class PlayerBatchService {
         private final CommandSourceStack executionSource;
         private final Deque<SummonEntry> remainingEntries;
         private final List<String> batchNames;
+        private final Map<String, BotConfig> plannedConfigs;
         private final Set<String> pendingTagNames = new LinkedHashSet<>();
         private final Map<String, BotConfig> pendingConfigs = new LinkedHashMap<>();
         private final int totalCount;
@@ -1394,6 +1397,7 @@ public final class PlayerBatchService {
             this.config = config;
             this.formation = config.formation();
             this.batchNames = List.copyOf(names);
+            this.plannedConfigs = buildPlannedConfigs(names, config);
             this.remainingEntries = new ArrayDeque<>(buildFormationEntries(source, names, formation));
             this.totalCount = names.size();
             this.bossBar = new ServerBossEvent(
@@ -1433,12 +1437,13 @@ public final class PlayerBatchService {
                 if (accepted || spawnedPlayer != null) {
                     owner.markManagedName(nextName);
                     successCount++;
+                    BotConfig spawnConfig = plannedConfigs.getOrDefault(nextName, baseConfig());
                     if (spawnedPlayer instanceof EntityPlayerMPFake fakePlayer) {
                         owner.markManagedBot(fakePlayer);
-                        applyConfig(fakePlayer);
+                        applyConfig(fakePlayer, spawnConfig);
                     } else {
                         pendingTagNames.add(nextName);
-                        pendingConfigs.put(nextName, config);
+                        pendingConfigs.put(nextName, spawnConfig);
                     }
                     debug("Spawn accepted for {} in {} formation", nextName, formation);
                 } else {
@@ -1457,7 +1462,7 @@ public final class PlayerBatchService {
                 ServerPlayer queuedPlayer = server.getPlayerList().getPlayerByName(pendingName);
                 if (queuedPlayer instanceof EntityPlayerMPFake fakePlayer) {
                     owner.markManagedBot(fakePlayer);
-                    applyConfig(fakePlayer);
+                    applyConfig(fakePlayer, pendingConfigs.getOrDefault(pendingName, baseConfig()));
                     tagged.add(pendingName);
                 }
             }
@@ -1500,7 +1505,7 @@ public final class PlayerBatchService {
                 ServerPlayer player = server.getPlayerList().getPlayerByName(batchName);
                 if (player instanceof EntityPlayerMPFake fakePlayer) {
                     owner.markManagedBot(fakePlayer);
-                    applyConfig(fakePlayer);
+                    applyConfig(fakePlayer, plannedConfigs.getOrDefault(batchName, baseConfig()));
                     pendingTagNames.remove(batchName);
                     pendingConfigs.remove(batchName);
                 }
@@ -1508,8 +1513,78 @@ public final class PlayerBatchService {
             tryTagKnownPlayers();
         }
 
-        private void applyConfig(EntityPlayerMPFake fakePlayer) {
-            config.loadout().applyTo(fakePlayer);
+        private void applyConfig(EntityPlayerMPFake fakePlayer, BotConfig appliedConfig) {
+            appliedConfig.loadout().applyTo(fakePlayer);
+        }
+
+        private BotConfig baseConfig() {
+            return new BotConfig(config.formation(), config.loadout());
+        }
+
+        private Map<String, BotConfig> buildPlannedConfigs(List<String> names, BotConfig batchConfig) {
+            Map<String, BotConfig> result = new LinkedHashMap<>();
+            BotConfig baseConfig = baseConfig();
+            for (String name : names) {
+                result.put(name, baseConfig);
+            }
+            if (batchConfig.distributions().isEmpty()) {
+                return result;
+            }
+
+            List<BotConfig.DistributionRule> rules = batchConfig.distributions().stream()
+                    .filter(rule -> rule.percent() > 0 && !rule.loadout().isEmpty())
+                    .toList();
+            if (rules.isEmpty()) {
+                return result;
+            }
+
+            List<Integer> counts = allocateDistributionCounts(names.size(), rules);
+            List<String> allocationOrder = new ArrayList<>(names);
+            Collections.shuffle(allocationOrder, new Random(allocationOrder.hashCode()));
+            int cursor = 0;
+            for (int index = 0; index < rules.size(); index++) {
+                BotConfig.DistributionRule rule = rules.get(index);
+                int ruleCount = counts.get(index);
+                BotConfig distributedConfig = new BotConfig(
+                        batchConfig.formation(),
+                        batchConfig.loadout().mergedWith(rule.loadout())
+                );
+                for (int assigned = 0; assigned < ruleCount && cursor < allocationOrder.size(); assigned++, cursor++) {
+                    result.put(allocationOrder.get(cursor), distributedConfig);
+                }
+            }
+            return result;
+        }
+
+        private List<Integer> allocateDistributionCounts(int totalBots, List<BotConfig.DistributionRule> rules) {
+            List<Integer> counts = new ArrayList<>();
+            List<Double> remainders = new ArrayList<>();
+            int assigned = 0;
+            for (BotConfig.DistributionRule rule : rules) {
+                double exact = totalBots * (rule.percent() / 100.0D);
+                int floor = (int) Math.floor(exact);
+                counts.add(floor);
+                remainders.add(exact - floor);
+                assigned += floor;
+            }
+            int targetAssigned = Math.min(totalBots, (int) Math.round(totalBots * (rules.stream().mapToInt(BotConfig.DistributionRule::percent).sum() / 100.0D)));
+            while (assigned < targetAssigned) {
+                int bestIndex = -1;
+                double bestRemainder = -1.0D;
+                for (int index = 0; index < remainders.size(); index++) {
+                    if (remainders.get(index) > bestRemainder) {
+                        bestRemainder = remainders.get(index);
+                        bestIndex = index;
+                    }
+                }
+                if (bestIndex < 0) {
+                    break;
+                }
+                counts.set(bestIndex, counts.get(bestIndex) + 1);
+                remainders.set(bestIndex, 0.0D);
+                assigned++;
+            }
+            return counts;
         }
 
         private void discard() {
