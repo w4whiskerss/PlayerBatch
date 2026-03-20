@@ -163,6 +163,11 @@ public final class PlayerBatchCommand {
                                                 context.getSource(),
                                                 StringArgumentType.getString(context, "mode")
                                         ))
+                                        .then(Commands.literal("all")
+                                                .executes(context -> PlayerBatchService.setAllAiMode(
+                                                        context.getSource(),
+                                                        StringArgumentType.getString(context, "mode")
+                                                )))
                                         .then(Commands.literal("group")
                                                 .then(Commands.argument("name", StringArgumentType.word())
                                                         .executes(context -> PlayerBatchService.setGroupAiMode(

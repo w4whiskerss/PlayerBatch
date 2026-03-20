@@ -397,6 +397,21 @@ public final class PlayerBatchService {
         return result.affected();
     }
 
+    public static int setAllAiMode(CommandSourceStack source, String rawMode) {
+        EnumSet<BotAiMode> modes = BotAiMode.parseSet(rawMode);
+        if (modes == null) {
+            source.sendFailure(Component.literal("Unknown AI mode. Use: idle, combat, patrol, guard, follow, flee. Combine with +."));
+            return 0;
+        }
+        AiResult result = state(source.getServer()).setAllAiModes(modes);
+        if (!result.success()) {
+            source.sendFailure(Component.literal(result.message()));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(result.message()), true);
+        return result.affected();
+    }
+
     public static int setGroupAiMode(CommandSourceStack source, String rawName, String rawMode) {
         EnumSet<BotAiMode> modes = BotAiMode.parseSet(rawMode);
         if (modes == null) {
@@ -1129,6 +1144,18 @@ public final class PlayerBatchService {
             return AiResult.success("Set AI mode to '" + BotAiMode.displayModes(modes) + "' for " + players.size() + " selected bot" + suffix(players.size()) + ".", players.size());
         }
 
+        private AiResult setAllAiModes(EnumSet<BotAiMode> modes) {
+            List<EntityPlayerMPFake> players = fakePlayers();
+            if (players.isEmpty()) {
+                return AiResult.failure("No managed bots are available.");
+            }
+            for (EntityPlayerMPFake player : players) {
+                ensureBrain(player).modes = EnumSet.copyOf(modes);
+            }
+            broadcast(false);
+            return AiResult.success("Set AI mode to '" + BotAiMode.displayModes(modes) + "' for all " + players.size() + " managed bot" + suffix(players.size()) + ".", players.size());
+        }
+
         private AiResult setGroupAiModes(String rawName, EnumSet<BotAiMode> modes) {
             BotGroup group = groups.get(normalizeGroupName(rawName));
             if (group == null) {
@@ -1303,8 +1330,7 @@ public final class PlayerBatchService {
                     moveTowardTarget(fakePlayer, threat, 2.2D, 0.48D);
                 } else {
                     dampHorizontalMotion(fakePlayer);
-                    fakePlayer.swing(fakePlayer.getUsedItemHand(), true);
-                    fakePlayer.attack(threat);
+                    tryAttackTarget(fakePlayer, threat);
                 }
                 return;
             }
@@ -1387,6 +1413,15 @@ public final class PlayerBatchService {
             source.setShiftKeyDown(false);
             source.setSprinting(false);
             source.setDeltaMovement(source.getDeltaMovement().multiply(0.35D, 1.0D, 0.35D));
+        }
+
+        private void tryAttackTarget(EntityPlayerMPFake source, LivingEntity target) {
+            if (source.getAttackStrengthScale(0.5F) < 0.92F) {
+                return;
+            }
+            source.swing(source.getUsedItemHand(), true);
+            source.attack(target);
+            source.resetAttackStrengthTicker();
         }
 
         private boolean shouldJumpTowardTarget(EntityPlayerMPFake source, Entity target, Vec3 motion) {
