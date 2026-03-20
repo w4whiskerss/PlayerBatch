@@ -55,6 +55,17 @@ public final class PlayerBatchNetworking {
             case REMOVE_GROUP -> PlayerBatchService.removeSelectionFromGroupFromGui(player, payload.text());
             case SET_SELECTED_AI -> PlayerBatchService.setSelectedAiModeFromGui(player, payload.text());
             case SET_GROUP_AI -> PlayerBatchService.setGroupAiModeFromGui(player, payload.text(), payload.detail());
+            case APPLY_SELECTED_ITEM -> PlayerBatchService.applySelectedItemFromGui(player, payload.text(), payload.detail(), payload.number());
+            case APPLY_SELECTED_EFFECT -> PlayerBatchService.applySelectedEffectFromGui(player, payload.text(), payload.number(), parseOptionalInt(payload.detail(), 0));
+            case CLEAR_SELECTED_EFFECTS -> PlayerBatchService.clearSelectedEffectsFromGui(player);
+        }
+    }
+
+    private static int parseOptionalInt(String raw, int fallback) {
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (Exception ignored) {
+            return fallback;
         }
     }
 
@@ -76,7 +87,10 @@ public final class PlayerBatchNetworking {
         ASSIGN_GROUP,
         REMOVE_GROUP,
         SET_SELECTED_AI,
-        SET_GROUP_AI
+        SET_GROUP_AI,
+        APPLY_SELECTED_ITEM,
+        APPLY_SELECTED_EFFECT,
+        CLEAR_SELECTED_EFFECTS
     }
 
     public record PlayerBatchActionPayload(ActionKind kind, String text, String detail, int number, boolean flag) implements CustomPacketPayload {

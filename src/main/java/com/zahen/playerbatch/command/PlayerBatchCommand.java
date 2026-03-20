@@ -17,6 +17,7 @@ import java.util.List;
 
 public final class PlayerBatchCommand {
     private static final List<String> DIRECTION_SUGGESTIONS = List.of("up", "below", "north", "south", "east", "west");
+    private static final List<String> SLOT_SUGGESTIONS = List.of("head", "chest", "legs", "feet", "mainhand", "offhand");
     private static final List<String> AI_MODE_SUGGESTIONS = List.of(
             BotAiMode.IDLE.displayName(),
             BotAiMode.COMBAT.displayName(),
@@ -177,6 +178,48 @@ public final class PlayerBatchCommand {
                                                         context.getSource(),
                                                         StringArgumentType.getString(context, "name")
                                                 ))))))
+                .then(Commands.literal("customize")
+                        .then(Commands.literal("item")
+                                .then(Commands.argument("slot", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(SLOT_SUGGESTIONS, builder))
+                                        .then(Commands.argument("item", StringArgumentType.word())
+                                                .suggests((context, builder) -> SharedSuggestionProvider.suggest(
+                                                        BuiltInRegistries.ITEM.keySet().stream().map(Object::toString), builder
+                                                ))
+                                                .executes(context -> PlayerBatchService.applySelectedItem(
+                                                        context.getSource(),
+                                                        StringArgumentType.getString(context, "slot"),
+                                                        StringArgumentType.getString(context, "item"),
+                                                        1
+                                                ))
+                                                .then(Commands.argument("count", IntegerArgumentType.integer(1, 64))
+                                                        .executes(context -> PlayerBatchService.applySelectedItem(
+                                                                context.getSource(),
+                                                                StringArgumentType.getString(context, "slot"),
+                                                                StringArgumentType.getString(context, "item"),
+                                                                IntegerArgumentType.getInteger(context, "count")
+                                                        ))))))
+                        .then(Commands.literal("effect")
+                                .then(Commands.argument("effect", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(
+                                                BuiltInRegistries.MOB_EFFECT.keySet().stream().map(Object::toString), builder
+                                        ))
+                                        .then(Commands.argument("seconds", IntegerArgumentType.integer(1))
+                                                .executes(context -> PlayerBatchService.applySelectedEffect(
+                                                        context.getSource(),
+                                                        StringArgumentType.getString(context, "effect"),
+                                                        IntegerArgumentType.getInteger(context, "seconds"),
+                                                        0
+                                                ))
+                                                .then(Commands.argument("amplifier", IntegerArgumentType.integer(0))
+                                                        .executes(context -> PlayerBatchService.applySelectedEffect(
+                                                                context.getSource(),
+                                                                StringArgumentType.getString(context, "effect"),
+                                                                IntegerArgumentType.getInteger(context, "seconds"),
+                                                                IntegerArgumentType.getInteger(context, "amplifier")
+                                                        ))))))
+                        .then(Commands.literal("clearEffects")
+                                .executes(context -> PlayerBatchService.clearSelectedEffects(context.getSource()))))
                 .then(Commands.literal("command")
                         .then(Commands.argument("action", StringArgumentType.greedyString())
                                 .suggests((context, builder) -> SharedSuggestionProvider.suggest(ACTION_SUGGESTIONS, builder))

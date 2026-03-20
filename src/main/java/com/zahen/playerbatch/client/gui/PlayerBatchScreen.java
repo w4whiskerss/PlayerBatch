@@ -40,6 +40,12 @@ public class PlayerBatchScreen extends Screen {
     private EditBox closestBox;
     private EditBox groupBox;
     private EditBox aiModeBox;
+    private EditBox slotBox;
+    private EditBox itemBox;
+    private EditBox itemCountBox;
+    private EditBox effectBox;
+    private EditBox effectDurationBox;
+    private EditBox effectAmplifierBox;
     private EditBox actionBox;
     private EditBox directionBox;
     private EditBox blockBox;
@@ -164,19 +170,42 @@ public class PlayerBatchScreen extends Screen {
                 PlayerBatchNetworking.ActionKind.SET_GROUP_AI, groupBox.getValue(), aiModeBox.getValue(), 0, false
         ))).bounds(left + 244, top + 132, 110, 20).build()), customizationWidgets);
 
-        actionBox = register(addRenderableWidget(new EditBox(font, left, top + 176, 180, 20, Component.literal("Action"))), customizationWidgets);
+        slotBox = register(addRenderableWidget(new EditBox(font, left, top + 176, 70, 20, Component.literal("Slot"))), customizationWidgets);
+        slotBox.setValue("mainhand");
+        itemBox = register(addRenderableWidget(new EditBox(font, left + 76, top + 176, 120, 20, Component.literal("Item"))), customizationWidgets);
+        itemBox.setValue("diamond_sword");
+        itemCountBox = register(addRenderableWidget(new EditBox(font, left + 202, top + 176, 40, 20, Component.literal("Count"))), customizationWidgets);
+        itemCountBox.setValue("1");
+        register(addRenderableWidget(Button.builder(Component.literal("Apply Item"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
+                PlayerBatchNetworking.ActionKind.APPLY_SELECTED_ITEM, slotBox.getValue(), itemBox.getValue(), parseInt(itemCountBox.getValue(), 1), false
+        ))).bounds(left + 248, top + 176, 106, 20).build()), customizationWidgets);
+
+        effectBox = register(addRenderableWidget(new EditBox(font, left, top + 202, 120, 20, Component.literal("Effect"))), customizationWidgets);
+        effectBox.setValue("speed");
+        effectDurationBox = register(addRenderableWidget(new EditBox(font, left + 126, top + 202, 54, 20, Component.literal("Secs"))), customizationWidgets);
+        effectDurationBox.setValue("30");
+        effectAmplifierBox = register(addRenderableWidget(new EditBox(font, left + 186, top + 202, 54, 20, Component.literal("Amp"))), customizationWidgets);
+        effectAmplifierBox.setValue("0");
+        register(addRenderableWidget(Button.builder(Component.literal("Apply Effect"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
+                PlayerBatchNetworking.ActionKind.APPLY_SELECTED_EFFECT, effectBox.getValue(), effectAmplifierBox.getValue(), parseInt(effectDurationBox.getValue(), 30), false
+        ))).bounds(left + 246, top + 202, 108, 20).build()), customizationWidgets);
+
+        actionBox = register(addRenderableWidget(new EditBox(font, left, top + 228, 180, 20, Component.literal("Action"))), customizationWidgets);
         actionBox.setValue("attack once");
         register(addRenderableWidget(Button.builder(Component.literal("Run Action"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.RUN_ACTION, actionBox.getValue(), "", 0, false
-        ))).bounds(left + 186, top + 176, 92, 20).build()), customizationWidgets);
+        ))).bounds(left + 186, top + 228, 92, 20).build()), customizationWidgets);
+        register(addRenderableWidget(Button.builder(Component.literal("Clear Effects"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
+                PlayerBatchNetworking.ActionKind.CLEAR_SELECTED_EFFECTS, "", "", 0, false
+        ))).bounds(left + 284, top + 228, 102, 20).build()), customizationWidgets);
 
-        directionBox = register(addRenderableWidget(new EditBox(font, left, top + 202, 84, 20, Component.literal("Direction"))), customizationWidgets);
+        directionBox = register(addRenderableWidget(new EditBox(font, left, top + 254, 84, 20, Component.literal("Direction"))), customizationWidgets);
         directionBox.setValue("up");
-        blockBox = register(addRenderableWidget(new EditBox(font, left + 90, top + 202, 100, 20, Component.literal("Block"))), customizationWidgets);
+        blockBox = register(addRenderableWidget(new EditBox(font, left + 90, top + 254, 100, 20, Component.literal("Block"))), customizationWidgets);
         blockBox.setValue("stone");
         register(addRenderableWidget(Button.builder(Component.literal("Teleport Selected"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.TELEPORT_SELECTION, directionBox.getValue(), blockBox.getValue(), 0, false
-        ))).bounds(left + 196, top + 202, 126, 20).build()), customizationWidgets);
+        ))).bounds(left + 196, top + 254, 126, 20).build()), customizationWidgets);
     }
 
     private void initDebugTab(int left, int top) {
@@ -249,11 +278,12 @@ public class PlayerBatchScreen extends Screen {
         }
 
         guiGraphics.drawString(font, "Tab 2: Customization", left, top, 0xEBDCA9);
-        guiGraphics.drawString(font, "Selection, groups, AI mode assignment, actions, and teleport controls.", left, top + 68, 0xC3CED7);
+        guiGraphics.drawString(font, "Selection, groups, AI mode assignment, item/armor editing, effects, and teleport controls.", left, top + 68, 0xC3CED7);
         guiGraphics.drawString(font, "Supported AI modes: idle, combat, patrol, guard, follow, flee", left, top + 156, 0x9BE5B8);
-        guiGraphics.drawString(font, "Groups: " + (snapshot.groups().isEmpty() ? "none yet" : String.join(" | ", snapshot.groups())), left, top + 238, 0xA8E8D2);
-        guiGraphics.drawString(font, "Selected bots (" + snapshot.selectedNames().size() + "): " + selectedSummary(), left, top + 254, 0xBFD7E6);
-        guiGraphics.drawString(font, "Armor/effects/loadout editors and wand area selection are still pending backend implementation.", left, top + 270, 0xE8C89C);
+        guiGraphics.drawString(font, "Item slots: head, chest, legs, feet, mainhand, offhand", left, top + 172, 0x9BE5B8);
+        guiGraphics.drawString(font, "Groups: " + (snapshot.groups().isEmpty() ? "none yet" : String.join(" | ", snapshot.groups())), left, top + 290, 0xA8E8D2);
+        guiGraphics.drawString(font, "Selected bots (" + snapshot.selectedNames().size() + "): " + selectedSummary(), left, top + 306, 0xBFD7E6);
+        guiGraphics.drawString(font, "Full inventory pages, enchant editing, and wand area selection are still pending backend implementation.", left, top + 322, 0xE8C89C);
     }
 
     private void renderDebugText(GuiGraphics guiGraphics, int left, int top) {

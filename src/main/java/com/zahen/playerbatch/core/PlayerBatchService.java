@@ -21,7 +21,9 @@ import net.minecraft.world.BossEvent;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
@@ -227,6 +229,51 @@ public final class PlayerBatchService {
         return moved;
     }
 
+    public static int applySelectedItem(CommandSourceStack source, String rawSlot, String rawItem, int count) {
+        EquipmentSlot slot = parseEquipmentSlot(rawSlot);
+        Item item = parseItem(rawItem);
+        if (slot == null) {
+            source.sendFailure(Component.literal("Unknown slot. Use: head, chest, legs, feet, mainhand, offhand."));
+            return 0;
+        }
+        if (item == null) {
+            source.sendFailure(Component.literal("Unknown item: " + rawItem));
+            return 0;
+        }
+        int affected = state(source.getServer()).applySelectedItem(slot, item, count);
+        if (affected <= 0) {
+            source.sendFailure(Component.literal("No selected managed bots were available to edit."));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Applied item to " + affected + " selected bot" + suffix(affected) + "."), true);
+        return affected;
+    }
+
+    public static int applySelectedEffect(CommandSourceStack source, String rawEffect, int durationSeconds, int amplifier) {
+        var effectHolder = parseEffect(rawEffect);
+        if (effectHolder == null) {
+            source.sendFailure(Component.literal("Unknown effect: " + rawEffect));
+            return 0;
+        }
+        int affected = state(source.getServer()).applySelectedEffect(effectHolder, durationSeconds, amplifier);
+        if (affected <= 0) {
+            source.sendFailure(Component.literal("No selected managed bots were available to edit."));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Applied effect to " + affected + " selected bot" + suffix(affected) + "."), true);
+        return affected;
+    }
+
+    public static int clearSelectedEffects(CommandSourceStack source) {
+        int affected = state(source.getServer()).clearSelectedEffects();
+        if (affected <= 0) {
+            source.sendFailure(Component.literal("No selected managed bots were available to edit."));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Cleared effects from " + affected + " selected bot" + suffix(affected) + "."), true);
+        return affected;
+    }
+
     public static int openGui(CommandSourceStack source) {
         ServerPlayer player = source.getPlayer();
         if (player == null) {
@@ -402,6 +449,18 @@ public final class PlayerBatchService {
         setGroupAiMode(player.createCommandSourceStack(), group, mode);
     }
 
+    public static void applySelectedItemFromGui(ServerPlayer player, String slot, String item, int count) {
+        applySelectedItem(player.createCommandSourceStack(), slot, item, count);
+    }
+
+    public static void applySelectedEffectFromGui(ServerPlayer player, String effect, int durationSeconds, int amplifier) {
+        applySelectedEffect(player.createCommandSourceStack(), effect, durationSeconds, amplifier);
+    }
+
+    public static void clearSelectedEffectsFromGui(ServerPlayer player) {
+        clearSelectedEffects(player.createCommandSourceStack());
+    }
+
     public static boolean toggleSelection(ServerPlayer actor, Entity entity) {
         if (!isManagedBot(entity)) {
             return false;
@@ -492,6 +551,53 @@ public final class PlayerBatchService {
         return blockName.contains(":") ? blockName.toLowerCase(Locale.ROOT) : "minecraft:" + blockName.toLowerCase(Locale.ROOT);
     }
 
+    private static EquipmentSlot parseEquipmentSlot(String rawSlot) {
+        if (rawSlot == null || rawSlot.isBlank()) {
+            return null;
+        }
+        return switch (rawSlot.trim().toLowerCase(Locale.ROOT)) {
+            case "head", "helmet" -> EquipmentSlot.HEAD;
+            case "chest", "chestplate" -> EquipmentSlot.CHEST;
+            case "legs", "leggings" -> EquipmentSlot.LEGS;
+            case "feet", "boots" -> EquipmentSlot.FEET;
+            case "mainhand", "hand" -> EquipmentSlot.MAINHAND;
+            case "offhand" -> EquipmentSlot.OFFHAND;
+            default -> null;
+        };
+    }
+
+    private static Item parseItem(String rawItem) {
+        String normalizedId = normalizeRegistryId(rawItem);
+        if (normalizedId == null) {
+            return null;
+        }
+        return BuiltInRegistries.ITEM.keySet().stream()
+                .filter(key -> key.toString().equals(normalizedId))
+                .findFirst()
+                .flatMap(key -> BuiltInRegistries.ITEM.get(key).map(net.minecraft.core.Holder.Reference::value))
+                .orElse(null);
+    }
+
+    private static net.minecraft.core.Holder<net.minecraft.world.effect.MobEffect> parseEffect(String rawEffect) {
+        String normalizedId = normalizeRegistryId(rawEffect);
+        if (normalizedId == null) {
+            return null;
+        }
+        return BuiltInRegistries.MOB_EFFECT.keySet().stream()
+                .filter(key -> key.toString().equals(normalizedId))
+                .findFirst()
+                .flatMap(BuiltInRegistries.MOB_EFFECT::get)
+                .map(holder -> (net.minecraft.core.Holder<net.minecraft.world.effect.MobEffect>) holder)
+                .orElse(null);
+    }
+
+    private static String normalizeRegistryId(String rawId) {
+        if (rawId == null || rawId.isBlank()) {
+            return null;
+        }
+        return rawId.contains(":") ? rawId.trim().toLowerCase(Locale.ROOT) : "minecraft:" + rawId.trim().toLowerCase(Locale.ROOT);
+    }
+
     public record PlayerBatchSnapshot(
             boolean openScreen,
             int maxSummonCount,
@@ -543,6 +649,7 @@ public final class PlayerBatchService {
             cleanupSelection();
             cleanupSubscribers();
             cleanupGroupsAndBrains();
+            tagQueuedBots();
 
             if (activeBatch == null && !queue.isEmpty()) {
                 activeBatch = queue.removeFirst();
@@ -571,6 +678,15 @@ public final class PlayerBatchService {
             if (aiTickCooldown-- <= 0) {
                 tickAi();
                 aiTickCooldown = AI_TICK_INTERVAL;
+            }
+        }
+
+        private void tagQueuedBots() {
+            if (activeBatch != null) {
+                activeBatch.tryTagKnownPlayers();
+            }
+            for (SummonBatch queuedBatch : queue) {
+                queuedBatch.tryTagKnownPlayers();
             }
         }
 
@@ -675,6 +791,39 @@ public final class PlayerBatchService {
             }
             broadcast(false);
             return succeeded;
+        }
+
+        private int applySelectedItem(EquipmentSlot slot, Item item, int count) {
+            List<EntityPlayerMPFake> players = selectedPlayers();
+            int sanitizedCount = Math.max(1, count);
+            for (EntityPlayerMPFake player : players) {
+                player.setItemSlot(slot, new ItemStack(item, sanitizedCount));
+            }
+            broadcast(false);
+            return players.size();
+        }
+
+        private int applySelectedEffect(net.minecraft.core.Holder<net.minecraft.world.effect.MobEffect> effectHolder, int durationSeconds, int amplifier) {
+            List<EntityPlayerMPFake> players = selectedPlayers();
+            int durationTicks = Math.max(1, durationSeconds) * 20;
+            int level = Math.max(0, amplifier);
+            for (EntityPlayerMPFake player : players) {
+                player.addEffect(new MobEffectInstance(effectHolder, durationTicks, level));
+            }
+            broadcast(false);
+            return players.size();
+        }
+
+        private int clearSelectedEffects() {
+            List<EntityPlayerMPFake> players = selectedPlayers();
+            for (EntityPlayerMPFake player : players) {
+                player.removeAllEffects();
+                if (selectedIds.contains(player.getUUID())) {
+                    applySelectionGlow(player);
+                }
+            }
+            broadcast(false);
+            return players.size();
         }
 
         private int teleportSelection(CommandSourceStack source, Direction direction, String blockName) {
@@ -1003,6 +1152,7 @@ public final class PlayerBatchService {
         private final CommandSourceStack feedbackSource;
         private final CommandSourceStack executionSource;
         private final Deque<SummonEntry> remainingEntries;
+        private final Set<String> pendingTagNames = new LinkedHashSet<>();
         private final int totalCount;
         private final String formation;
         private final ServerBossEvent bossBar;
@@ -1055,6 +1205,8 @@ public final class PlayerBatchService {
                     successCount++;
                     if (spawnedPlayer != null) {
                         spawnedPlayer.addTag(BOT_TAG);
+                    } else {
+                        pendingTagNames.add(nextName);
                     }
                     debug("Spawn accepted for {} in {} formation", nextName, formation);
                 } else {
@@ -1065,6 +1217,18 @@ public final class PlayerBatchService {
                 failCount++;
                 PlayerBatch.LOGGER.error("Failed to execute Carpet summon command for {}", nextName, exception);
             }
+        }
+
+        private void tryTagKnownPlayers() {
+            List<String> tagged = new ArrayList<>();
+            for (String pendingName : pendingTagNames) {
+                ServerPlayer queuedPlayer = server.getPlayerList().getPlayerByName(pendingName);
+                if (queuedPlayer != null) {
+                    queuedPlayer.addTag(BOT_TAG);
+                    tagged.add(pendingName);
+                }
+            }
+            pendingTagNames.removeAll(tagged);
         }
 
         private BatchProgress progress() {
