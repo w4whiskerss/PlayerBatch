@@ -74,7 +74,7 @@ public final class LoadoutEditorScreen extends Screen {
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        renderBackground(guiGraphics, mouseX, mouseY, partialTick);
+        guiGraphics.fill(0, 0, width, height, 0xA0101010);
         guiGraphics.drawCenteredString(font, title, width / 2, 16, 0xFFFFFF);
         guiGraphics.drawString(font, "Visual editor for selected bots: armor, hands, and hotbar.", width / 2 - 170, 26, 0xC3CED7);
         guiGraphics.drawString(font, "Selected slot: " + SLOT_REFS.get(selectedIndex).displayName(), width / 2 - 170, 62, 0x9BE5B8);
