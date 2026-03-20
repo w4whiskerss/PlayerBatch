@@ -115,6 +115,7 @@ public final class PlayerBatchScreen extends Screen {
         int distributionArmorWidth = 160;
         int distributionWeaponWidth = 160;
         int distributionGroupTwoArmorWidth = fullRowWidth - (distributionPercentWidth + distributionArmorWidth + distributionWeaponWidth + distributionPercentWidth + (8 * 4));
+        int minDistributionTitleY = top + 360;
         int distributionTitleY = top + 366;
         int distributionRowOneY = distributionTitleY + 32;
         int distributionRowTwoY = distributionRowOneY + 40;
@@ -125,6 +126,12 @@ public final class PlayerBatchScreen extends Screen {
             distributionTitleY -= shift;
             distributionRowOneY -= shift;
             distributionRowTwoY -= shift;
+        }
+        if (distributionTitleY < minDistributionTitleY) {
+            int shift = minDistributionTitleY - distributionTitleY;
+            distributionTitleY += shift;
+            distributionRowOneY += shift;
+            distributionRowTwoY += shift;
         }
 
         countBox = addBox(left, top + 52, countWidth, preferences.summonCount(), this::refreshSummonState);
@@ -218,6 +225,7 @@ public final class PlayerBatchScreen extends Screen {
         int loadoutLabelY = top + 202;
         int hotbarLabelY = top + 254;
         int inventoryLabelY = top + 306;
+        int minDistributionTitleY = top + 360;
         int distributionTitleY = top + 366;
         int distributionRowOneLabelY = distributionTitleY + 18;
         int distributionRowOneY = distributionRowOneLabelY + 14;
@@ -232,6 +240,14 @@ public final class PlayerBatchScreen extends Screen {
             distributionRowOneY -= shift;
             distributionRowTwoLabelY -= shift;
             distributionRowTwoY -= shift;
+        }
+        if (distributionTitleY < minDistributionTitleY) {
+            int shift = minDistributionTitleY - distributionTitleY;
+            distributionTitleY += shift;
+            distributionRowOneLabelY += shift;
+            distributionRowOneY += shift;
+            distributionRowTwoLabelY += shift;
+            distributionRowTwoY += shift;
         }
 
         guiGraphics.drawString(font, "Page 1: Bot Summoning", left, top, 0xFFEBDCA9);
