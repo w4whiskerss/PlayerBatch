@@ -104,6 +104,10 @@ public final class PlayerBatchScreen extends Screen {
         int left = panelLeft() + 18;
         int top = panelTop() + 58;
         int footerY = panelTop() + panelHeight() - 30;
+        int footerGap = 28;
+        int distributionRowHeight = 20;
+        int distributionRowSpacing = 18;
+        int distributionLabelGap = 14;
         int countWidth = 76;
         int namesLeft = left + 94;
         int namesWidth = panelWidth() - 36 - countWidth - 18;
@@ -115,24 +119,8 @@ public final class PlayerBatchScreen extends Screen {
         int distributionArmorWidth = 160;
         int distributionWeaponWidth = 160;
         int distributionGroupTwoArmorWidth = fullRowWidth - (distributionPercentWidth + distributionArmorWidth + distributionWeaponWidth + distributionPercentWidth + (8 * 4));
-        int minDistributionTitleY = top + 360;
-        int distributionTitleY = top + 366;
-        int distributionRowOneY = distributionTitleY + 32;
-        int distributionRowTwoY = distributionRowOneY + 40;
-        int distributionBottom = distributionRowTwoY + 20;
-        int maxDistributionBottom = footerY - 8;
-        if (distributionBottom > maxDistributionBottom) {
-            int shift = distributionBottom - maxDistributionBottom;
-            distributionTitleY -= shift;
-            distributionRowOneY -= shift;
-            distributionRowTwoY -= shift;
-        }
-        if (distributionTitleY < minDistributionTitleY) {
-            int shift = minDistributionTitleY - distributionTitleY;
-            distributionTitleY += shift;
-            distributionRowOneY += shift;
-            distributionRowTwoY += shift;
-        }
+        int distributionRowTwoY = footerY - footerGap - distributionRowHeight;
+        int distributionRowOneY = distributionRowTwoY - distributionRowSpacing - distributionRowHeight;
 
         countBox = addBox(left, top + 52, countWidth, preferences.summonCount(), this::refreshSummonState);
         namesBox = addBox(namesLeft, top + 52, namesWidth, preferences.summonNames(), 32767, value -> {
@@ -213,6 +201,11 @@ public final class PlayerBatchScreen extends Screen {
 
     private void renderBotSummoning(GuiGraphics guiGraphics, int left, int top) {
         int footerY = panelTop() + panelHeight() - 30;
+        int footerGap = 28;
+        int distributionRowHeight = 20;
+        int distributionRowSpacing = 18;
+        int distributionLabelGap = 14;
+        int distributionSectionGap = 18;
         int introLineOneY = top + 14;
         int introLineTwoY = top + 26;
         int countLabelY = top + 38;
@@ -225,30 +218,11 @@ public final class PlayerBatchScreen extends Screen {
         int loadoutLabelY = top + 202;
         int hotbarLabelY = top + 254;
         int inventoryLabelY = top + 306;
-        int minDistributionTitleY = top + 360;
-        int distributionTitleY = top + 366;
-        int distributionRowOneLabelY = distributionTitleY + 18;
-        int distributionRowOneY = distributionRowOneLabelY + 14;
-        int distributionRowTwoLabelY = distributionRowOneY + 26;
-        int distributionRowTwoY = distributionRowTwoLabelY + 14;
-        int distributionBottom = distributionRowTwoY + 20;
-        int maxDistributionBottom = footerY - 8;
-        if (distributionBottom > maxDistributionBottom) {
-            int shift = distributionBottom - maxDistributionBottom;
-            distributionTitleY -= shift;
-            distributionRowOneLabelY -= shift;
-            distributionRowOneY -= shift;
-            distributionRowTwoLabelY -= shift;
-            distributionRowTwoY -= shift;
-        }
-        if (distributionTitleY < minDistributionTitleY) {
-            int shift = minDistributionTitleY - distributionTitleY;
-            distributionTitleY += shift;
-            distributionRowOneLabelY += shift;
-            distributionRowOneY += shift;
-            distributionRowTwoLabelY += shift;
-            distributionRowTwoY += shift;
-        }
+        int distributionRowTwoY = footerY - footerGap - distributionRowHeight;
+        int distributionRowTwoLabelY = distributionRowTwoY - distributionLabelGap;
+        int distributionRowOneY = distributionRowTwoY - distributionRowSpacing - distributionRowHeight;
+        int distributionRowOneLabelY = distributionRowOneY - distributionLabelGap;
+        int distributionTitleY = distributionRowOneLabelY - distributionSectionGap;
 
         guiGraphics.drawString(font, "Page 1: Bot Summoning", left, top, 0xFFEBDCA9);
         guiGraphics.drawString(font, "Usernames are fixed. Remaining bots stay random.", left, introLineOneY, 0xFFC3CED7);
