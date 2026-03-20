@@ -39,10 +39,10 @@ public final class PlayerBatchSummonLoadoutScreen extends Screen {
         guiGraphics.fill(left, top, left + 360, top + 180, 0xC0151D25);
         guiGraphics.fill(left + 10, top + 10, left + 350, top + 170, 0xA01C2630);
 
-        guiGraphics.drawCenteredString(font, title, width / 2, top + 18, 0xFFFFFF);
-        guiGraphics.drawString(font, "Step 2 placeholder", left + 20, top + 48, 0xEBDCA9);
-        guiGraphics.drawString(font, "Continue now opens a real next screen.", left + 20, top + 72, 0xC3CED7);
-        guiGraphics.drawString(font, "Page 2 loadout work is still pending.", left + 20, top + 88, 0xC3CED7);
+        guiGraphics.drawCenteredString(font, title, width / 2, top + 18, 0xFFFFFFFF);
+        guiGraphics.drawString(font, "Step 2 placeholder", left + 20, top + 48, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Continue now opens a real next screen.", left + 20, top + 72, 0xFFC3CED7);
+        guiGraphics.drawString(font, "Page 2 loadout work is still pending.", left + 20, top + 88, 0xFFC3CED7);
 
         super.render(guiGraphics, mouseX, mouseY, partialTick);
     }

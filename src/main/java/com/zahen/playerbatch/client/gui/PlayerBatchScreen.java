@@ -89,18 +89,18 @@ public final class PlayerBatchScreen extends Screen {
         guiGraphics.fill(left, top, left + PANEL_WIDTH, top + PANEL_HEIGHT, 0xC0151D25);
         guiGraphics.fill(left + 10, top + 10, left + PANEL_WIDTH - 10, top + PANEL_HEIGHT - 10, 0xA01C2630);
 
-        guiGraphics.drawCenteredString(font, title, width / 2, top + 16, 0xFFFFFF);
-        guiGraphics.drawString(font, "Step 1 of 3: usernames and count", left + 20, top + 36, 0xEBDCA9);
-        guiGraphics.drawString(font, "Enter specific bot names here. Remaining bots stay random every summon batch.", left + 20, top + 76, 0xC3CED7);
-        guiGraphics.drawString(font, "Names: comma-separated, like Alice, Bob, Charlie", left + 20, top + 92, 0x8FB7D1);
+        guiGraphics.drawCenteredString(font, title, width / 2, top + 16, 0xFFFFFFFF);
+        guiGraphics.drawString(font, "Step 1 of 3: usernames and count", left + 20, top + 36, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Enter specific bot names here. Remaining bots stay random every summon batch.", left + 20, top + 76, 0xFFC3CED7);
+        guiGraphics.drawString(font, "Names: comma-separated, like Alice, Bob, Charlie", left + 20, top + 92, 0xFF8FB7D1);
 
-        guiGraphics.drawString(font, "Live preview", left + 20, top + 138, 0x9BE5B8);
-        guiGraphics.drawString(font, "Custom names: " + summary.customNameCount(), left + 20, top + 156, 0xFFFFFF);
-        guiGraphics.drawString(font, "Random bots: " + summary.randomBotCount, left + 160, top + 156, 0xFFFFFF);
-        guiGraphics.drawString(font, "Final count: " + summary.effectiveCount, left + 280, top + 156, 0xFFFFFF);
-        guiGraphics.drawString(font, "Parsed names: " + summary.previewNames(), left + 20, top + 168, 0xD9E4F1);
+        guiGraphics.drawString(font, "Live preview", left + 20, top + 138, 0xFF9BE5B8);
+        guiGraphics.drawString(font, "Custom names: " + summary.customNameCount(), left + 20, top + 156, 0xFFFFFFFF);
+        guiGraphics.drawString(font, "Random bots: " + summary.randomBotCount, left + 160, top + 156, 0xFFFFFFFF);
+        guiGraphics.drawString(font, "Final count: " + summary.effectiveCount, left + 280, top + 156, 0xFFFFFFFF);
+        guiGraphics.drawString(font, "Parsed names: " + summary.previewNames(), left + 20, top + 168, 0xFFD9E4F1);
 
-        int statusColor = summary.errorMessage == null ? 0xBFD8E8 : 0xFF9696;
+        int statusColor = summary.errorMessage == null ? 0xFFBFD8E8 : 0xFFFF9696;
         String statusText = summary.errorMessage == null
                 ? (infoMessage != null ? infoMessage : "Draft saved. Taken names fall back to random names during summon.")
                 : summary.errorMessage;
@@ -108,7 +108,7 @@ public final class PlayerBatchScreen extends Screen {
 
         guiGraphics.drawString(font, "Batch status: " + (snapshot.batchActive() ? "running" : "idle")
                 + " | queued " + snapshot.queuedBatches()
-                + " | selected " + snapshot.selectedNames().size(), left + 20, top + 206, 0xC3CED7);
+                + " | selected " + snapshot.selectedNames().size(), left + 20, top + 206, 0xFFC3CED7);
 
         super.render(guiGraphics, mouseX, mouseY, partialTick);
     }
