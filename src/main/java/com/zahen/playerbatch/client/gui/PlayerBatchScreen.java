@@ -1,6 +1,7 @@
 package com.zahen.playerbatch.client.gui;
 
 import com.zahen.playerbatch.client.PlayerBatchClient;
+import com.zahen.playerbatch.client.PlayerBatchUiPreferences;
 import com.zahen.playerbatch.core.BotAiMode;
 import com.zahen.playerbatch.core.PlayerBatchService;
 import com.zahen.playerbatch.network.PlayerBatchNetworking;
@@ -27,6 +28,7 @@ public class PlayerBatchScreen extends Screen {
 
     private Tab activeTab = Tab.SUMMONING;
     private PlayerBatchService.PlayerBatchSnapshot snapshot;
+    private final PlayerBatchUiPreferences preferences;
 
     private LimitSlider limitSlider;
     private EditBox countBox;
@@ -56,6 +58,8 @@ public class PlayerBatchScreen extends Screen {
         super(Component.literal("PlayerBatch"));
         this.parent = parent;
         this.snapshot = PlayerBatchClient.latestSnapshot();
+        this.preferences = PlayerBatchUiPreferences.load();
+        this.activeTab = parseTab(preferences.activeTab());
     }
 
     @Override
@@ -97,6 +101,7 @@ public class PlayerBatchScreen extends Screen {
             int recommended = recommendedBotAmount();
             limitBox.setValue(Integer.toString(recommended));
             countBox.setValue(Integer.toString(Math.min(recommended, parseInt(countBox.getValue(), 1))));
+            savePreferences();
         }).bounds(left, top + 44, 116, 20).build()), summoningWidgets);
 
         perTickBox = register(addRenderableWidget(new EditBox(font, left + 124, top + 44, 56, 20, Component.literal("Rate"))), summoningWidgets);
@@ -110,10 +115,14 @@ public class PlayerBatchScreen extends Screen {
         ))).bounds(left + 186, top + 44, 112, 20).build()), summoningWidgets);
 
         countBox = register(addRenderableWidget(new EditBox(font, left, top + 88, 70, 20, Component.literal("Count"))), summoningWidgets);
-        countBox.setValue("8");
+        countBox.setValue(preferences.summonCount());
+        countBox.setResponder(value -> savePreferences());
         namesBox = register(addRenderableWidget(new EditBox(font, left + 76, top + 88, 270, 20, Component.literal("Usernames"))), summoningWidgets);
+        namesBox.setValue(preferences.summonNames());
         namesBox.setHint(Component.literal("{Alpha, Bravo, Charlie}"));
+        namesBox.setResponder(value -> savePreferences());
 
+        formationIndex = formationIndex(preferences.summonFormation());
         formationButton = register(addRenderableWidget(Button.builder(formationLabel(), button -> cycleFormation())
                 .bounds(left, top + 114, 120, 20).build()), summoningWidgets);
         register(addRenderableWidget(Button.builder(Component.literal("Summon Batch"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
@@ -134,13 +143,15 @@ public class PlayerBatchScreen extends Screen {
         ))).bounds(left, top + 18, 92, 20).build()), customizationWidgets);
 
         rangeBox = register(addRenderableWidget(new EditBox(font, left + 98, top + 18, 48, 20, Component.literal("Range"))), customizationWidgets);
-        rangeBox.setValue("16");
+        rangeBox.setValue(preferences.selectRange());
+        rangeBox.setResponder(value -> savePreferences());
         register(addRenderableWidget(Button.builder(Component.literal("Nearest X"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SELECT_RANGE, "", "", parseInt(rangeBox.getValue(), 16), false
         ))).bounds(left + 152, top + 18, 90, 20).build()), customizationWidgets);
 
         closestBox = register(addRenderableWidget(new EditBox(font, left + 248, top + 18, 48, 20, Component.literal("Count"))), customizationWidgets);
-        closestBox.setValue("10");
+        closestBox.setValue(preferences.selectClosest());
+        closestBox.setResponder(value -> savePreferences());
         register(addRenderableWidget(Button.builder(Component.literal("Closest"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SELECT_CLOSEST, "", "", parseInt(closestBox.getValue(), 10), false
         ))).bounds(left + 302, top + 18, 84, 20).build()), customizationWidgets);
@@ -150,7 +161,8 @@ public class PlayerBatchScreen extends Screen {
         ))).bounds(left, top + 44, 120, 20).build()), customizationWidgets);
 
         groupBox = register(addRenderableWidget(new EditBox(font, left, top + 88, 120, 20, Component.literal("Group"))), customizationWidgets);
-        groupBox.setValue("alpha");
+        groupBox.setValue(preferences.groupName());
+        groupBox.setResponder(value -> savePreferences());
         register(addRenderableWidget(Button.builder(Component.literal("Create"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.CREATE_GROUP, groupBox.getValue(), "", 0, false
         ))).bounds(left + 126, top + 88, 70, 20).build()), customizationWidgets);
@@ -162,7 +174,8 @@ public class PlayerBatchScreen extends Screen {
         ))).bounds(left + 278, top + 88, 76, 20).build()), customizationWidgets);
 
         aiModeBox = register(addRenderableWidget(new EditBox(font, left, top + 132, 120, 20, Component.literal("AI Mode"))), customizationWidgets);
-        aiModeBox.setValue(BotAiMode.IDLE.displayName());
+        aiModeBox.setValue(preferences.aiMode());
+        aiModeBox.setResponder(value -> savePreferences());
         register(addRenderableWidget(Button.builder(Component.literal("Set Selected AI"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.SET_SELECTED_AI, aiModeBox.getValue(), "", 0, false
         ))).bounds(left + 126, top + 132, 112, 20).build()), customizationWidgets);
@@ -171,27 +184,34 @@ public class PlayerBatchScreen extends Screen {
         ))).bounds(left + 244, top + 132, 110, 20).build()), customizationWidgets);
 
         slotBox = register(addRenderableWidget(new EditBox(font, left, top + 176, 70, 20, Component.literal("Slot"))), customizationWidgets);
-        slotBox.setValue("mainhand");
+        slotBox.setValue(preferences.itemSlot());
+        slotBox.setResponder(value -> savePreferences());
         itemBox = register(addRenderableWidget(new EditBox(font, left + 76, top + 176, 120, 20, Component.literal("Item"))), customizationWidgets);
-        itemBox.setValue("diamond_sword");
+        itemBox.setValue(preferences.itemId());
+        itemBox.setResponder(value -> savePreferences());
         itemCountBox = register(addRenderableWidget(new EditBox(font, left + 202, top + 176, 40, 20, Component.literal("Count"))), customizationWidgets);
-        itemCountBox.setValue("1");
+        itemCountBox.setValue(preferences.itemCount());
+        itemCountBox.setResponder(value -> savePreferences());
         register(addRenderableWidget(Button.builder(Component.literal("Apply Item"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.APPLY_SELECTED_ITEM, slotBox.getValue(), itemBox.getValue(), parseInt(itemCountBox.getValue(), 1), false
         ))).bounds(left + 248, top + 176, 106, 20).build()), customizationWidgets);
 
         effectBox = register(addRenderableWidget(new EditBox(font, left, top + 202, 120, 20, Component.literal("Effect"))), customizationWidgets);
-        effectBox.setValue("speed");
+        effectBox.setValue(preferences.effectId());
+        effectBox.setResponder(value -> savePreferences());
         effectDurationBox = register(addRenderableWidget(new EditBox(font, left + 126, top + 202, 54, 20, Component.literal("Secs"))), customizationWidgets);
-        effectDurationBox.setValue("30");
+        effectDurationBox.setValue(preferences.effectDuration());
+        effectDurationBox.setResponder(value -> savePreferences());
         effectAmplifierBox = register(addRenderableWidget(new EditBox(font, left + 186, top + 202, 54, 20, Component.literal("Amp"))), customizationWidgets);
-        effectAmplifierBox.setValue("0");
+        effectAmplifierBox.setValue(preferences.effectAmplifier());
+        effectAmplifierBox.setResponder(value -> savePreferences());
         register(addRenderableWidget(Button.builder(Component.literal("Apply Effect"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.APPLY_SELECTED_EFFECT, effectBox.getValue(), effectAmplifierBox.getValue(), parseInt(effectDurationBox.getValue(), 30), false
         ))).bounds(left + 246, top + 202, 108, 20).build()), customizationWidgets);
 
         actionBox = register(addRenderableWidget(new EditBox(font, left, top + 228, 180, 20, Component.literal("Action"))), customizationWidgets);
-        actionBox.setValue("attack once");
+        actionBox.setValue(preferences.action());
+        actionBox.setResponder(value -> savePreferences());
         register(addRenderableWidget(Button.builder(Component.literal("Run Action"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.RUN_ACTION, actionBox.getValue(), "", 0, false
         ))).bounds(left + 186, top + 228, 92, 20).build()), customizationWidgets);
@@ -200,9 +220,11 @@ public class PlayerBatchScreen extends Screen {
         ))).bounds(left + 284, top + 228, 102, 20).build()), customizationWidgets);
 
         directionBox = register(addRenderableWidget(new EditBox(font, left, top + 254, 84, 20, Component.literal("Direction"))), customizationWidgets);
-        directionBox.setValue("up");
+        directionBox.setValue(preferences.direction());
+        directionBox.setResponder(value -> savePreferences());
         blockBox = register(addRenderableWidget(new EditBox(font, left + 90, top + 254, 100, 20, Component.literal("Block"))), customizationWidgets);
-        blockBox.setValue("stone");
+        blockBox.setValue(preferences.block());
+        blockBox.setResponder(value -> savePreferences());
         register(addRenderableWidget(Button.builder(Component.literal("Teleport Selected"), button -> send(new PlayerBatchNetworking.PlayerBatchActionPayload(
                 PlayerBatchNetworking.ActionKind.TELEPORT_SELECTION, directionBox.getValue(), blockBox.getValue(), 0, false
         ))).bounds(left + 196, top + 254, 126, 20).build()), customizationWidgets);
@@ -240,6 +262,7 @@ public class PlayerBatchScreen extends Screen {
 
     @Override
     public void onClose() {
+        savePreferences();
         send(new PlayerBatchNetworking.PlayerBatchActionPayload(PlayerBatchNetworking.ActionKind.CLOSE_SCREEN, "", "", 0, false));
         Minecraft.getInstance().setScreen(parent);
     }
@@ -304,6 +327,7 @@ public class PlayerBatchScreen extends Screen {
 
     private void switchTab(Tab tab) {
         activeTab = tab;
+        savePreferences();
         refreshTabVisibility();
     }
 
@@ -344,6 +368,7 @@ public class PlayerBatchScreen extends Screen {
         if (formationButton != null) {
             formationButton.setMessage(formationLabel());
         }
+        savePreferences();
     }
 
     private String currentFormation() {
@@ -399,6 +424,44 @@ public class PlayerBatchScreen extends Screen {
         } catch (Exception ignored) {
             return fallback;
         }
+    }
+
+    private int formationIndex(String formation) {
+        int index = FORMATION_OPTIONS.indexOf(formation == null ? "" : formation.toLowerCase(Locale.ROOT));
+        return index >= 0 ? index : 0;
+    }
+
+    private Tab parseTab(String rawTab) {
+        try {
+            return Tab.valueOf((rawTab == null ? Tab.SUMMONING.name() : rawTab).trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return Tab.SUMMONING;
+        }
+    }
+
+    private void savePreferences() {
+        preferences.setActiveTab(activeTab.name());
+        preferences.setSummonCount(valueOf(countBox));
+        preferences.setSummonNames(valueOf(namesBox));
+        preferences.setSummonFormation(currentFormation());
+        preferences.setSelectRange(valueOf(rangeBox));
+        preferences.setSelectClosest(valueOf(closestBox));
+        preferences.setGroupName(valueOf(groupBox));
+        preferences.setAiMode(valueOf(aiModeBox).toLowerCase(Locale.ROOT));
+        preferences.setItemSlot(valueOf(slotBox).toLowerCase(Locale.ROOT));
+        preferences.setItemId(valueOf(itemBox).toLowerCase(Locale.ROOT));
+        preferences.setItemCount(valueOf(itemCountBox));
+        preferences.setEffectId(valueOf(effectBox).toLowerCase(Locale.ROOT));
+        preferences.setEffectDuration(valueOf(effectDurationBox));
+        preferences.setEffectAmplifier(valueOf(effectAmplifierBox));
+        preferences.setAction(valueOf(actionBox));
+        preferences.setDirection(valueOf(directionBox).toLowerCase(Locale.ROOT));
+        preferences.setBlock(valueOf(blockBox).toLowerCase(Locale.ROOT));
+        preferences.save();
+    }
+
+    private String valueOf(EditBox box) {
+        return box == null ? "" : box.getValue();
     }
 
     private void send(PlayerBatchNetworking.PlayerBatchActionPayload payload) {
