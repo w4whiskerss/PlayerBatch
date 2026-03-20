@@ -7,6 +7,7 @@ import com.zahen.playerbatch.PlayerBatch;
 import com.zahen.playerbatch.command.CombatPresetParser;
 import com.zahen.playerbatch.compat.CommandCompat;
 import com.zahen.playerbatch.config.CombatPresetStore;
+import com.zahen.playerbatch.config.KitStore;
 import com.zahen.playerbatch.config.PlayerBatchConfig;
 import com.zahen.playerbatch.item.SelectionWandItem;
 import com.zahen.playerbatch.name.NamePlanner;
@@ -67,6 +68,7 @@ import java.util.concurrent.ConcurrentMap;
 public final class PlayerBatchService {
     private static final String BOT_TAG = "bot";
     private static final int AI_TICK_INTERVAL = 1;
+    private static final int FLEX_SPIN_STEPS = 8;
     private static final String DEFAULT_FORMATION = "circle";
     private static final ConcurrentMap<MinecraftServer, ServerState> SERVER_STATES = new ConcurrentHashMap<>();
     private static final MobEffectInstance SELECTED_GLOWING = new MobEffectInstance(MobEffects.GLOWING, Integer.MAX_VALUE, 0, false, false);
@@ -447,6 +449,24 @@ public final class PlayerBatchService {
             source.sendFailure(Component.literal(exception.getMessage()));
             return 0;
         }
+    }
+
+    public static int saveKit(CommandSourceStack source, String name) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.literal("Only players can save kits."));
+            return 0;
+        }
+
+        BotLoadout loadout = BotLoadout.captureFromPlayer(player);
+        if (loadout.isEmpty()) {
+            source.sendFailure(Component.literal("Your inventory is empty, so there is nothing to save."));
+            return 0;
+        }
+
+        KitStore.save(name, loadout);
+        source.sendSuccess(() -> Component.literal("Saved kit '" + name + "' from your current inventory."), true);
+        return 1;
     }
 
     public static int summonSavedCombatPreset(CommandSourceStack source, String name, Integer overrideCount) {
@@ -1394,9 +1414,7 @@ public final class PlayerBatchService {
             if (brain.attackRetreatTicks > 0) {
                 brain.attackRetreatTicks--;
             }
-            if (brain.flexSpinTicks > 0) {
-                brain.flexSpinTicks--;
-            } else if (brain.flexSpinProgress != 0.0F) {
+            if (brain.flexSpinTicks <= 0 && brain.flexSpinProgress != 0.0F) {
                 brain.flexSpinProgress = 0.0F;
             }
             if (tickScriptedUse(fakePlayer, brain, threat)) {
@@ -1594,6 +1612,7 @@ public final class PlayerBatchService {
                 brain.flexSpinProgress = 0.0F;
                 brain.flexSpinDirection *= -1;
             }
+            brain.flexSpinTicks--;
             updateStuckState(source, brain, true, target);
         }
 
@@ -2018,7 +2037,7 @@ public final class PlayerBatchService {
                 moveAwayFromThreat(source, target, 1.0F, brain);
             }
             if (combatPreset != null && combatPreset.flex360Enabled()) {
-                brain.flexSpinTicks = Integer.MAX_VALUE;
+                brain.flexSpinTicks = FLEX_SPIN_STEPS;
             }
         }
 

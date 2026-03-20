@@ -4,6 +4,7 @@ import carpet.patches.EntityPlayerMPFake;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -65,6 +66,13 @@ public final class BotLoadout {
         merged.inventory.putAll(overrides.inventory);
         merged.effects.addAll(overrides.effects);
         return merged;
+    }
+
+    public static BotLoadout captureFromPlayer(ServerPlayer player) {
+        BotLoadout loadout = new BotLoadout();
+        captureEquipment(player, loadout);
+        captureInventory(player, loadout);
+        return loadout;
     }
 
     public void writeTo(Properties properties, String prefix) {
@@ -145,6 +153,65 @@ public final class BotLoadout {
         } catch (Exception ignored) {
             return fallback;
         }
+    }
+
+    private static void captureEquipment(ServerPlayer player, BotLoadout loadout) {
+        for (EquipmentSlot slot : List.of(
+                EquipmentSlot.HEAD,
+                EquipmentSlot.CHEST,
+                EquipmentSlot.LEGS,
+                EquipmentSlot.FEET,
+                EquipmentSlot.MAINHAND,
+                EquipmentSlot.OFFHAND
+        )) {
+            StackSpec spec = stackSpecFromStack(player.getItemBySlot(slot));
+            if (spec != null) {
+                loadout.equipment.put(slot, spec);
+            }
+        }
+    }
+
+    private static void captureInventory(ServerPlayer player, BotLoadout loadout) {
+        for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            StackSpec spec = stackSpecFromStack(stack);
+            if (spec == null) {
+                continue;
+            }
+            if (slot <= 8) {
+                loadout.hotbar.put(slot, spec);
+            } else {
+                loadout.inventory.put(slot, spec);
+            }
+        }
+    }
+
+    private static StackSpec stackSpecFromStack(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return null;
+        }
+        String itemId = stackItemId(stack);
+        if (itemId == null || itemId.isBlank()) {
+            return null;
+        }
+        return new StackSpec(itemId, stack.getCount());
+    }
+
+    private static String stackItemId(ItemStack stack) {
+        PotionContents potionContents = stack.get(DataComponents.POTION_CONTENTS);
+        if (potionContents != null && potionContents.potion().isPresent()) {
+            String potionId = BuiltInRegistries.POTION.getKey(potionContents.potion().get().value()).toString();
+            if (stack.is(Items.POTION)) {
+                return "minecraft:potion_of_" + potionId.substring("minecraft:".length());
+            }
+            if (stack.is(Items.SPLASH_POTION)) {
+                return "minecraft:splash_potion_of_" + potionId.substring("minecraft:".length());
+            }
+            if (stack.is(Items.LINGERING_POTION)) {
+                return "minecraft:lingering_potion_of_" + potionId.substring("minecraft:".length());
+            }
+        }
+        return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
     }
 
     public void applyTo(EntityPlayerMPFake fakePlayer) {

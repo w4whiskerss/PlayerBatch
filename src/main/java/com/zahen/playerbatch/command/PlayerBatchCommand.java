@@ -6,6 +6,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.zahen.playerbatch.config.CombatPresetStore;
+import com.zahen.playerbatch.config.KitStore;
 import com.zahen.playerbatch.core.BotAiMode;
 import com.zahen.playerbatch.core.PlayerBatchService;
 import net.minecraft.commands.CommandSourceStack;
@@ -296,6 +297,23 @@ public final class PlayerBatchCommand {
                                                 )))))
                         .then(Commands.literal("list")
                                 .executes(context -> PlayerBatchService.listCombatPresets(context.getSource()))))
+                .then(Commands.literal("kit")
+                        .then(Commands.literal("save")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .executes(context -> PlayerBatchService.saveKit(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "name")
+                                        ))))
+                        .then(Commands.literal("list")
+                                .executes(context -> {
+                                    List<String> names = KitStore.names();
+                                    if (names.isEmpty()) {
+                                        context.getSource().sendFailure(Component.literal("No saved kits yet."));
+                                        return 0;
+                                    }
+                                    context.getSource().sendSuccess(() -> Component.literal("Saved kits: " + String.join(", ", names)), false);
+                                    return names.size();
+                                })))
                 .then(Commands.literal("help")
                         .executes(context -> {
                             context.getSource().sendSuccess(
