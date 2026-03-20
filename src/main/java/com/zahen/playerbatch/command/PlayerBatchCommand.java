@@ -13,8 +13,12 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 
 public final class PlayerBatchCommand {
     private static final List<String> DIRECTION_SUGGESTIONS = List.of("up", "below", "north", "south", "east", "west");
@@ -258,7 +262,7 @@ public final class PlayerBatchCommand {
                                                 ""
                                         ))
                                         .then(Commands.argument("options", StringArgumentType.greedyString())
-                                                .suggests((context, builder) -> SharedSuggestionProvider.suggest(CombatPresetParser.suggestOptions(builder.getRemainingLowerCase()), builder))
+                                                .suggests((context, builder) -> suggestCombatPresetOptions(builder))
                                                 .executes(context -> PlayerBatchService.summonCombatPreset(
                                                         context.getSource(),
                                                         IntegerArgumentType.getInteger(context, "count"),
@@ -269,7 +273,7 @@ public final class PlayerBatchCommand {
                                         .then(Commands.literal("combat")
                                                 .then(Commands.argument("count", IntegerArgumentType.integer(1))
                                                         .then(Commands.argument("options", StringArgumentType.greedyString())
-                                                                .suggests((context, builder) -> SharedSuggestionProvider.suggest(CombatPresetParser.suggestOptions(builder.getRemainingLowerCase()), builder))
+                                                                .suggests((context, builder) -> suggestCombatPresetOptions(builder))
                                                                 .executes(context -> PlayerBatchService.saveCombatPreset(
                                                                         context.getSource(),
                                                                         StringArgumentType.getString(context, "name"),
@@ -319,6 +323,22 @@ public final class PlayerBatchCommand {
                                 IntegerArgumentType.getInteger(context, "count"),
                                 StringArgumentType.getString(context, "names")
                         )));
+    }
+
+    private static CompletableFuture<Suggestions> suggestCombatPresetOptions(SuggestionsBuilder builder) {
+        String remaining = builder.getRemaining();
+        int optionStart = findActiveOptionStart(remaining);
+        SuggestionsBuilder optionBuilder = builder.createOffset(builder.getStart() + optionStart);
+        String activeOption = remaining.substring(optionStart).toLowerCase(Locale.ROOT);
+        for (String suggestion : CombatPresetParser.suggestOptions(activeOption)) {
+            optionBuilder.suggest(suggestion);
+        }
+        return optionBuilder.buildFuture();
+    }
+
+    private static int findActiveOptionStart(String remaining) {
+        int lastSpace = Math.max(remaining.lastIndexOf(' '), remaining.lastIndexOf('\t'));
+        return Math.max(0, lastSpace + 1);
     }
 }
 
