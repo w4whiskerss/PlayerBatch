@@ -51,7 +51,7 @@ import java.util.concurrent.ConcurrentMap;
 
 public final class PlayerBatchService {
     private static final String BOT_TAG = "bot";
-    private static final int AI_TICK_INTERVAL = 10;
+    private static final int AI_TICK_INTERVAL = 1;
     private static final String DEFAULT_FORMATION = "circle";
     private static final ConcurrentMap<MinecraftServer, ServerState> SERVER_STATES = new ConcurrentHashMap<>();
     private static final MobEffectInstance SELECTED_GLOWING = new MobEffectInstance(MobEffects.GLOWING, Integer.MAX_VALUE, 0, false, false);
@@ -766,10 +766,11 @@ public final class PlayerBatchService {
                 }
             }
 
-            if (aiTickCooldown-- <= 0) {
+            if (aiTickCooldown <= 0) {
                 tickAi();
                 aiTickCooldown = AI_TICK_INTERVAL;
             }
+            aiTickCooldown--;
         }
 
         private void tagQueuedBots() {
