@@ -9,6 +9,10 @@ import com.zahen.playerbatch.compat.CommandCompat;
 import com.zahen.playerbatch.config.CombatPresetStore;
 import com.zahen.playerbatch.config.KitStore;
 import com.zahen.playerbatch.config.PlayerBatchConfig;
+import com.zahen.playerbatch.ext.PlayerBatchExtensionManager;
+import com.zahen.playerbatch.extapi.PlayerBatchFormation;
+import com.zahen.playerbatch.extapi.PlayerBatchSpawnPoint;
+import com.zahen.playerbatch.extapi.PlayerBatchSummonRequest;
 import com.zahen.playerbatch.item.SelectionWandItem;
 import com.zahen.playerbatch.name.NamePlanner;
 import net.minecraft.ChatFormatting;
@@ -2462,6 +2466,10 @@ public final class PlayerBatchService {
             if (normalizedFormation == null) {
                 return buildCircleEntries(source, names);
             }
+            PlayerBatchFormation extensionFormation = PlayerBatchExtensionManager.formation(normalizedFormation);
+            if (extensionFormation != null) {
+                return buildExtensionEntries(source, names, normalizedFormation, extensionFormation);
+            }
             return switch (normalizedFormation) {
                 case "square" -> buildSquareEntries(source, names);
                 case "triangle" -> buildTriangleEntries(source, names);
@@ -2470,6 +2478,33 @@ public final class PlayerBatchService {
                 case "circle" -> buildCircleEntries(source, names);
                 default -> buildCircleEntries(source, names);
             };
+        }
+
+        private List<SummonEntry> buildExtensionEntries(
+                CommandSourceStack source,
+                List<String> names,
+                String formationId,
+                PlayerBatchFormation formation
+        ) {
+            List<PlayerBatchSpawnPoint> points = formation.factory().create(
+                    new PlayerBatchSummonRequest(names.size(), List.copyOf(names), formationId, Map.of()),
+                    PlayerBatchExtensionManager.contextSnapshot()
+            );
+            if (points == null || points.isEmpty()) {
+                return buildCircleEntries(source, names);
+            }
+
+            List<SummonEntry> entries = new ArrayList<>(names.size());
+            ServerLevel level = source.getLevel();
+            for (int index = 0; index < names.size(); index++) {
+                PlayerBatchSpawnPoint point = points.get(Math.min(index, points.size() - 1));
+                int blockX = BlockPos.containing(point.x(), point.y(), point.z()).getX();
+                int blockZ = BlockPos.containing(point.x(), point.y(), point.z()).getZ();
+                int topY = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, blockX, blockZ);
+                String command = String.format(Locale.ROOT, "player %s spawn at %.3f %.3f %.3f", names.get(index), point.x(), (double) topY, point.z());
+                entries.add(new SummonEntry(names.get(index), command));
+            }
+            return entries;
         }
 
         private List<SummonEntry> buildCircleEntries(CommandSourceStack source, List<String> names) {
@@ -2676,11 +2711,15 @@ public final class PlayerBatchService {
             return DEFAULT_FORMATION;
         }
         String normalized = rawFormation.trim().toLowerCase(Locale.ROOT);
-        return switch (normalized) {
+        String builtin = switch (normalized) {
             case "circle", "square", "triangle", "random", "single block" -> normalized;
             case "single_block", "singleblock" -> "single block";
             default -> null;
         };
+        if (builtin != null) {
+            return builtin;
+        }
+        return PlayerBatchExtensionManager.isKnownFormation(normalized) ? normalized : null;
     }
 
     private static SummonSetup parseSummonSetup(String rawSetup) {

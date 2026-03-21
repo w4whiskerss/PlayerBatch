@@ -3,6 +3,7 @@ package com.zahen.playerbatch;
 import carpet.CarpetServer;
 import com.zahen.playerbatch.core.PlayerBatchService;
 import com.zahen.playerbatch.config.PlayerBatchConfig;
+import com.zahen.playerbatch.ext.PlayerBatchExtensionManager;
 import com.zahen.playerbatch.item.SelectionWandItem;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.api.ModInitializer;
@@ -22,6 +23,7 @@ public class PlayerBatch implements ModInitializer {
     @Override
     public void onInitialize() {
         PlayerBatchConfig.load();
+        PlayerBatchExtensionManager.initialize();
         UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
             if (world.isClientSide()) {
                 return InteractionResult.PASS;

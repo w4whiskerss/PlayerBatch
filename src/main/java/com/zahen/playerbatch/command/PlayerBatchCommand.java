@@ -9,6 +9,9 @@ import com.zahen.playerbatch.config.CombatPresetStore;
 import com.zahen.playerbatch.config.KitStore;
 import com.zahen.playerbatch.core.BotAiMode;
 import com.zahen.playerbatch.core.PlayerBatchService;
+import com.zahen.playerbatch.ext.PlayerBatchExtensionManager;
+import com.zahen.playerbatch.extapi.PlayerBatchAction;
+import com.zahen.playerbatch.extapi.PlayerBatchArgument;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
@@ -238,7 +241,7 @@ public final class PlayerBatchCommand {
                                 .executes(context -> PlayerBatchService.clearSelectedEffects(context.getSource()))))
                 .then(Commands.literal("command")
                         .then(Commands.argument("action", StringArgumentType.greedyString())
-                                .suggests((context, builder) -> SharedSuggestionProvider.suggest(ACTION_SUGGESTIONS, builder))
+                                .suggests((context, builder) -> SharedSuggestionProvider.suggest(allActionSuggestions(), builder))
                                 .executes(context -> PlayerBatchService.runSelectedAction(
                                         context.getSource(),
                                         StringArgumentType.getString(context, "action")
@@ -393,7 +396,7 @@ public final class PlayerBatchCommand {
 
         String lowerActive = active.toLowerCase(Locale.ROOT);
         if (lowerActive.startsWith("-")) {
-            for (String option : CombatPresetParser.suggestOptions(remaining.toLowerCase(Locale.ROOT))) {
+            for (String option : allSummonArgumentSuggestions(remaining.toLowerCase(Locale.ROOT))) {
                 tokenBuilder.suggest(option);
             }
             return tokenBuilder.buildFuture();
@@ -405,7 +408,7 @@ public final class PlayerBatchCommand {
             return tokenBuilder.buildFuture();
         }
         if (!hasFormation && activeIndex >= 1 || looksLikeFormationPrefix(lowerActive)) {
-            for (String formation : FORMATION_SUGGESTIONS) {
+            for (String formation : allFormationSuggestions()) {
                 if (lowerActive.isEmpty() || formation.startsWith(lowerActive)) {
                     tokenBuilder.suggest(formation);
                 }
@@ -413,7 +416,7 @@ public final class PlayerBatchCommand {
             return tokenBuilder.buildFuture();
         }
         if (hasFormation && (lowerActive.isEmpty() || lowerActive.startsWith("-"))) {
-            for (String option : CombatPresetParser.suggestOptions(remaining.toLowerCase(Locale.ROOT))) {
+            for (String option : allSummonArgumentSuggestions(remaining.toLowerCase(Locale.ROOT))) {
                 tokenBuilder.suggest(option);
             }
             for (String kitName : KitStore.names()) {
@@ -453,19 +456,42 @@ public final class PlayerBatchCommand {
     }
 
     private static boolean isFormationToken(String token) {
-        return FORMATION_SUGGESTIONS.contains(token) || token.equals("single block") || token.equals("singleblock");
+        return allFormationSuggestions().contains(token) || token.equals("single block") || token.equals("singleblock");
     }
 
     private static boolean looksLikeFormationPrefix(String token) {
         if (token == null || token.isEmpty()) {
             return false;
         }
-        for (String formation : FORMATION_SUGGESTIONS) {
+        for (String formation : allFormationSuggestions()) {
             if (formation.startsWith(token)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static List<String> allFormationSuggestions() {
+        java.util.LinkedHashSet<String> suggestions = new java.util.LinkedHashSet<>(FORMATION_SUGGESTIONS);
+        suggestions.addAll(PlayerBatchExtensionManager.formationIds());
+        return List.copyOf(suggestions);
+    }
+
+    private static List<String> allSummonArgumentSuggestions(String currentInput) {
+        java.util.LinkedHashSet<String> suggestions = new java.util.LinkedHashSet<>(CombatPresetParser.suggestOptions(currentInput));
+        for (PlayerBatchArgument argument : PlayerBatchExtensionManager.arguments()) {
+            suggestions.addAll(argument.suggestionExamples());
+        }
+        return List.copyOf(suggestions);
+    }
+
+    private static List<String> allActionSuggestions() {
+        java.util.LinkedHashSet<String> suggestions = new java.util.LinkedHashSet<>(ACTION_SUGGESTIONS);
+        for (PlayerBatchAction action : PlayerBatchExtensionManager.actions()) {
+            suggestions.add(action.id());
+            suggestions.addAll(action.aliases());
+        }
+        return List.copyOf(suggestions);
     }
 }
 
