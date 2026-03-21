@@ -304,6 +304,13 @@ public final class PlayerBatchCommand {
                                                 context.getSource(),
                                                 StringArgumentType.getString(context, "name")
                                         ))))
+                        .then(Commands.literal("load")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(KitStore.names(), builder))
+                                        .executes(context -> PlayerBatchService.loadKit(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "name")
+                                        ))))
                         .then(Commands.literal("list")
                                 .executes(context -> {
                                     List<String> names = KitStore.names();

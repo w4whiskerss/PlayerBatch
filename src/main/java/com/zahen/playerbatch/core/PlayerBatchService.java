@@ -469,6 +469,23 @@ public final class PlayerBatchService {
         return 1;
     }
 
+    public static int loadKit(CommandSourceStack source, String name) {
+        BotLoadout loadout = KitStore.get(name);
+        if (loadout == null || loadout.isEmpty()) {
+            source.sendFailure(Component.literal("Unknown or empty kit: " + name));
+            return 0;
+        }
+
+        int affected = state(source.getServer()).applySelectedLoadout(loadout);
+        if (affected <= 0) {
+            source.sendFailure(Component.literal("Select one or more managed bots before loading a kit."));
+            return 0;
+        }
+
+        source.sendSuccess(() -> Component.literal("Loaded kit '" + name + "' onto " + affected + " selected bot" + suffix(affected) + "."), true);
+        return affected;
+    }
+
     public static int summonSavedCombatPreset(CommandSourceStack source, String name, Integer overrideCount) {
         CombatPresetSpec.SavedCombatPreset preset = CombatPresetStore.get(name);
         if (preset == null) {
@@ -995,6 +1012,19 @@ public final class PlayerBatchService {
             return players.size();
         }
 
+        private int applySelectedLoadout(BotLoadout loadout) {
+            List<EntityPlayerMPFake> players = selectedPlayers();
+            for (EntityPlayerMPFake player : players) {
+                clearBotLoadout(player);
+                loadout.applyTo(player);
+                if (selectedIds.contains(player.getUUID())) {
+                    applySelectionGlow(player);
+                }
+            }
+            broadcast(false);
+            return players.size();
+        }
+
         private int applySelectedHotbarSlot(int slotIndex, Item item, int count) {
             List<EntityPlayerMPFake> players = selectedPlayers();
             int sanitizedCount = Math.max(1, count);
@@ -1003,6 +1033,23 @@ public final class PlayerBatchService {
             }
             broadcast(false);
             return players.size();
+        }
+
+        private void clearBotLoadout(EntityPlayerMPFake player) {
+            for (EquipmentSlot slot : List.of(
+                    EquipmentSlot.HEAD,
+                    EquipmentSlot.CHEST,
+                    EquipmentSlot.LEGS,
+                    EquipmentSlot.FEET,
+                    EquipmentSlot.MAINHAND,
+                    EquipmentSlot.OFFHAND
+            )) {
+                player.setItemSlot(slot, ItemStack.EMPTY);
+            }
+            for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
+                player.getInventory().setItem(slot, ItemStack.EMPTY);
+            }
+            player.removeAllEffects();
         }
 
         private int applySelectedEffect(net.minecraft.core.Holder<net.minecraft.world.effect.MobEffect> effectHolder, int durationSeconds, int amplifier) {
