@@ -11,7 +11,7 @@
   "environment": "*",
   "entrypoints": {
     "main": [
-      "com.zahen.playerbatch.PlayerBatch"
+      "com.w4whiskers.playerbatch.PlayerBatch"
     ]
   },
   "depends": {
