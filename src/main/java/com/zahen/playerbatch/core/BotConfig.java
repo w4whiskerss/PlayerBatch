@@ -1,5 +1,6 @@
 package com.zahen.playerbatch.core;
 
+import com.zahen.playerbatch.extapi.PlayerBatchSummonPlan;
 import net.minecraft.world.entity.EquipmentSlot;
 
 import java.io.IOException;
@@ -14,24 +15,34 @@ public final class BotConfig {
     private final BotLoadout loadout;
     private final List<DistributionRule> distributions;
     private final CombatPresetSpec combatPreset;
+    private final PlayerBatchSummonPlan extensionPlan;
 
     public BotConfig(String formation, BotLoadout loadout) {
-        this(formation, loadout, List.of(), null);
+        this(formation, loadout, List.of(), null, new PlayerBatchSummonPlan());
     }
 
     public BotConfig(String formation, BotLoadout loadout, List<DistributionRule> distributions) {
-        this(formation, loadout, distributions, null);
+        this(formation, loadout, distributions, null, new PlayerBatchSummonPlan());
     }
 
     public BotConfig(String formation, BotLoadout loadout, CombatPresetSpec combatPreset) {
-        this(formation, loadout, List.of(), combatPreset);
+        this(formation, loadout, List.of(), combatPreset, new PlayerBatchSummonPlan());
     }
 
     public BotConfig(String formation, BotLoadout loadout, List<DistributionRule> distributions, CombatPresetSpec combatPreset) {
+        this(formation, loadout, distributions, combatPreset, new PlayerBatchSummonPlan());
+    }
+
+    public BotConfig(String formation, BotLoadout loadout, CombatPresetSpec combatPreset, PlayerBatchSummonPlan extensionPlan) {
+        this(formation, loadout, List.of(), combatPreset, extensionPlan);
+    }
+
+    public BotConfig(String formation, BotLoadout loadout, List<DistributionRule> distributions, CombatPresetSpec combatPreset, PlayerBatchSummonPlan extensionPlan) {
         this.formation = formation == null || formation.isBlank() ? "circle" : formation;
         this.loadout = loadout == null ? new BotLoadout() : loadout;
         this.distributions = distributions == null ? List.of() : List.copyOf(distributions);
         this.combatPreset = combatPreset;
+        this.extensionPlan = extensionPlan == null ? new PlayerBatchSummonPlan() : extensionPlan.copy();
     }
 
     public String formation() {
@@ -48,6 +59,10 @@ public final class BotConfig {
 
     public CombatPresetSpec combatPreset() {
         return combatPreset;
+    }
+
+    public PlayerBatchSummonPlan extensionPlan() {
+        return extensionPlan.copy();
     }
 
     public String encode() {
@@ -184,7 +199,7 @@ public final class BotConfig {
                     Boolean.parseBoolean(properties.getProperty("combatPreset.flex360Enabled", "false"))
             );
         }
-        return new BotConfig(properties.getProperty("formation", "circle"), loadout, distributions, combatPreset);
+        return new BotConfig(properties.getProperty("formation", "circle"), loadout, distributions, combatPreset, new PlayerBatchSummonPlan());
     }
 
     private static void readSlot(Properties properties, String key, EquipmentSlot slot, BotLoadout loadout) {

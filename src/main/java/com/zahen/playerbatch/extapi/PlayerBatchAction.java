@@ -7,11 +7,13 @@ public record PlayerBatchAction(
         String id,
         String displayName,
         String description,
-        List<String> aliases
+        List<String> aliases,
+        PlayerBatchActionHandler handler
 ) {
     public PlayerBatchAction {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(displayName, "displayName");
+        Objects.requireNonNull(handler, "handler");
         description = description == null ? "" : description;
         aliases = aliases == null ? List.of() : List.copyOf(aliases);
     }

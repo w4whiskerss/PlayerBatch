@@ -12,6 +12,7 @@ import com.zahen.playerbatch.config.PlayerBatchConfig;
 import com.zahen.playerbatch.ext.PlayerBatchExtensionManager;
 import com.zahen.playerbatch.extapi.PlayerBatchFormation;
 import com.zahen.playerbatch.extapi.PlayerBatchSpawnPoint;
+import com.zahen.playerbatch.extapi.PlayerBatchSummonPlan;
 import com.zahen.playerbatch.extapi.PlayerBatchSummonRequest;
 import com.zahen.playerbatch.item.SelectionWandItem;
 import com.zahen.playerbatch.name.NamePlanner;
@@ -134,7 +135,9 @@ public final class PlayerBatchService {
                 return;
             }
 
-            int queued = state(source.getServer()).queueBatch(source, plannedNames, new BotConfig(formation, config.loadout(), config.distributions(), config.combatPreset()));
+            PlayerBatchSummonPlan extensionPlan = config.extensionPlan();
+            extensionPlan.setFormationId(formation);
+            int queued = state(source.getServer()).queueBatch(source, plannedNames, new BotConfig(formation, config.loadout(), config.distributions(), config.combatPreset(), extensionPlan));
             if (queued <= 0) {
                 source.sendFailure(Component.literal("No valid bot names were available to queue."));
                 return;
@@ -433,7 +436,7 @@ public final class PlayerBatchService {
         try {
             CombatPresetParser.validate(rawOptions);
             CombatPresetSpec preset = CombatPresetParser.parse(rawOptions);
-            return requestSummon(source, count, "", new BotConfig("circle", preset.createLoadout(), preset));
+            return requestSummon(source, count, "", new BotConfig("circle", preset.createLoadout(), preset, new PlayerBatchSummonPlan()));
         } catch (IllegalArgumentException exception) {
             source.sendFailure(Component.literal(exception.getMessage()));
             return 0;
@@ -1007,9 +1010,14 @@ public final class PlayerBatchService {
             if (action == null || action.isBlank()) {
                 return 0;
             }
+            List<EntityPlayerMPFake> players = selectedPlayers();
+            int extensionHandled = PlayerBatchExtensionManager.executeAction(action, players, server, source);
+            if (extensionHandled >= 0) {
+                return extensionHandled;
+            }
             int succeeded = 0;
             CommandSourceStack executionSource = source.withSuppressedOutput();
-            for (EntityPlayerMPFake player : selectedPlayers()) {
+            for (EntityPlayerMPFake player : players) {
                 String command = "player " + player.getGameProfile().name() + " " + action.trim();
                 boolean success = CommandCompat.performPrefixedCommand(executionSource, command);
                 if (success) {
@@ -2349,6 +2357,10 @@ public final class PlayerBatchService {
                 fakePlayer.setGameMode(GameType.SURVIVAL);
                 appliedConfig.loadout().applyTo(fakePlayer);
                 owner.applyCombatPreset(fakePlayer, appliedConfig.combatPreset());
+                PlayerBatchExtensionManager.applyBehaviors(fakePlayer, appliedConfig.extensionPlan(), executionSource);
+                for (String action : appliedConfig.extensionPlan().postSpawnActions()) {
+                    CommandCompat.performPrefixedCommand(executionSource, "player " + fakePlayer.getGameProfile().name() + " " + action.trim());
+                }
             } finally {
                 if (previous) {
                     gameRules.set(GameRules.SHOW_ADVANCEMENT_MESSAGES, true, server);
@@ -2357,7 +2369,7 @@ public final class PlayerBatchService {
         }
 
         private BotConfig baseConfig() {
-            return new BotConfig(config.formation(), config.loadout(), config.combatPreset());
+            return new BotConfig(config.formation(), config.loadout(), config.combatPreset(), config.extensionPlan());
         }
 
         private Map<String, BotConfig> buildPlannedConfigs(List<String> names, BotConfig batchConfig) {
@@ -2390,7 +2402,8 @@ public final class PlayerBatchService {
                 BotConfig distributedConfig = new BotConfig(
                         batchConfig.formation(),
                         batchConfig.loadout().mergedWith(rule.loadout()),
-                        batchConfig.combatPreset()
+                        batchConfig.combatPreset(),
+                        batchConfig.extensionPlan()
                 );
                 for (int assigned = 0; assigned < ruleCount && cursor < allocationOrder.size(); assigned++, cursor++) {
                     String nameKey = normalizePlayerName(allocationOrder.get(cursor));
@@ -2775,6 +2788,8 @@ public final class PlayerBatchService {
         }
 
         BotLoadout loadout = new BotLoadout();
+        PlayerBatchSummonPlan extensionPlan = new PlayerBatchSummonPlan();
+        extensionPlan.setFormationId(formation);
         if (kitName != null) {
             BotLoadout savedKit = KitStore.get(kitName);
             if (savedKit == null || savedKit.isEmpty()) {
@@ -2785,13 +2800,30 @@ public final class PlayerBatchService {
 
         CombatPresetSpec combatPreset = null;
         if (!optionTokens.isEmpty()) {
-            String rawOptions = String.join(" ", optionTokens);
-            CombatPresetParser.validate(rawOptions);
-            combatPreset = CombatPresetParser.parse(rawOptions);
-            loadout = loadout.mergedWith(combatPreset.createLoadout());
+            List<String> builtinOptionTokens = new ArrayList<>();
+            for (String token : optionTokens) {
+                if (CombatPresetParser.isKnownOptionToken(token)) {
+                    builtinOptionTokens.add(token);
+                    continue;
+                }
+                boolean handled = PlayerBatchExtensionManager.applyArgumentToken(token, extensionPlan);
+                if (!handled) {
+                    throw new IllegalArgumentException("Unknown summon argument: " + token);
+                }
+            }
+            if (!builtinOptionTokens.isEmpty()) {
+                String rawOptions = String.join(" ", builtinOptionTokens);
+                CombatPresetParser.validate(rawOptions);
+                combatPreset = CombatPresetParser.parse(rawOptions);
+                loadout = loadout.mergedWith(combatPreset.createLoadout());
+            }
         }
 
-        return new SummonSetup(rawNames, new BotConfig(formation, loadout, combatPreset));
+        if (!extensionPlan.formationId().isBlank()) {
+            formation = extensionPlan.formationId();
+        }
+
+        return new SummonSetup(rawNames, new BotConfig(formation, loadout, combatPreset, extensionPlan));
     }
 
     private static List<String> splitSetupTokens(String rawSetup) {

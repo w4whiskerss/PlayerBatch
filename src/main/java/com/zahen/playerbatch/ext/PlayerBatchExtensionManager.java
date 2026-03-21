@@ -1,15 +1,21 @@
 package com.zahen.playerbatch.ext;
 
 import com.zahen.playerbatch.PlayerBatch;
+import com.zahen.playerbatch.compat.CommandCompat;
 import com.zahen.playerbatch.config.PlayerBatchConfig;
 import com.zahen.playerbatch.extapi.PlayerBatchAction;
 import com.zahen.playerbatch.extapi.PlayerBatchArgument;
+import com.zahen.playerbatch.extapi.PlayerBatchBotController;
 import com.zahen.playerbatch.extapi.PlayerBatchBehavior;
 import com.zahen.playerbatch.extapi.PlayerBatchContext;
 import com.zahen.playerbatch.extapi.PlayerBatchExtensionEntrypoint;
 import com.zahen.playerbatch.extapi.PlayerBatchFormation;
 import com.zahen.playerbatch.extapi.PlayerBatchRegistrar;
+import com.zahen.playerbatch.extapi.PlayerBatchSummonPlan;
+import carpet.patches.EntityPlayerMPFake;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.MinecraftServer;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -80,6 +86,64 @@ public final class PlayerBatchExtensionManager {
         );
     }
 
+    public static boolean applyArgumentToken(String token, PlayerBatchSummonPlan plan) {
+        for (PlayerBatchArgument argument : INSTANCE.arguments.values()) {
+            try {
+                if (argument.handler().apply(token, plan, contextSnapshot())) {
+                    return true;
+                }
+            } catch (Exception exception) {
+                PlayerBatch.LOGGER.error("PlayerBatch extension argument failed for token {}", token, exception);
+            }
+        }
+        return false;
+    }
+
+    public static int executeAction(String rawAction, Collection<EntityPlayerMPFake> bots, MinecraftServer server, CommandSourceStack source) {
+        String actionKey = rawAction == null ? "" : rawAction.trim().toLowerCase(Locale.ROOT);
+        if (actionKey.isEmpty()) {
+            return -1;
+        }
+        PlayerBatchAction matched = null;
+        for (PlayerBatchAction action : INSTANCE.actions.values()) {
+            if (matchesAction(action, actionKey)) {
+                matched = action;
+                break;
+            }
+        }
+        if (matched == null) {
+            return -1;
+        }
+        List<PlayerBatchBotController> controllers = bots.stream()
+                .map(bot -> new BotController(bot, source))
+                .map(controller -> (PlayerBatchBotController) controller)
+                .toList();
+        try {
+            return matched.handler().execute(rawAction, controllers, contextSnapshot());
+        } catch (Exception exception) {
+            PlayerBatch.LOGGER.error("PlayerBatch extension action failed for {}", rawAction, exception);
+            return 0;
+        }
+    }
+
+    public static void applyBehaviors(EntityPlayerMPFake bot, PlayerBatchSummonPlan plan, CommandSourceStack source) {
+        if (plan == null || plan.behaviorIds().isEmpty()) {
+            return;
+        }
+        BotController controller = new BotController(bot, source);
+        for (String behaviorId : plan.behaviorIds()) {
+            PlayerBatchBehavior behavior = INSTANCE.behaviors.get(behaviorId.toLowerCase(Locale.ROOT));
+            if (behavior == null) {
+                continue;
+            }
+            try {
+                behavior.handler().apply(controller, plan.copy(), contextSnapshot());
+            } catch (Exception exception) {
+                PlayerBatch.LOGGER.error("PlayerBatch extension behavior failed for {}", behaviorId, exception);
+            }
+        }
+    }
+
     private void initOnce() {
         if (initialized) {
             return;
@@ -96,6 +160,18 @@ public final class PlayerBatchExtensionManager {
             }
         }
         PlayerBatch.LOGGER.info("Loaded {} PlayerBatch extensions", entrypoints.size());
+    }
+
+    private static boolean matchesAction(PlayerBatchAction action, String rawAction) {
+        if (action.id().equalsIgnoreCase(rawAction)) {
+            return true;
+        }
+        for (String alias : action.aliases()) {
+            if (alias.equalsIgnoreCase(rawAction)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private final class Registrar implements PlayerBatchRegistrar {
@@ -151,6 +227,41 @@ public final class PlayerBatchExtensionManager {
                 throw new IllegalArgumentException("Extension id/key cannot be empty.");
             }
             return key.trim().toLowerCase(Locale.ROOT);
+        }
+    }
+
+    private static final class BotController implements PlayerBatchBotController {
+        private final EntityPlayerMPFake bot;
+        private final CommandSourceStack source;
+
+        private BotController(EntityPlayerMPFake bot, CommandSourceStack source) {
+            this.bot = bot;
+            this.source = source.withSuppressedOutput();
+        }
+
+        @Override
+        public java.util.UUID uuid() {
+            return bot.getUUID();
+        }
+
+        @Override
+        public String name() {
+            return bot.getGameProfile().name();
+        }
+
+        @Override
+        public void addTag(String tag) {
+            bot.addTag(tag);
+        }
+
+        @Override
+        public void removeTag(String tag) {
+            bot.removeTag(tag);
+        }
+
+        @Override
+        public boolean runAction(String action) {
+            return CommandCompat.performPrefixedCommand(source, "player " + bot.getGameProfile().name() + " " + action.trim());
         }
     }
 }

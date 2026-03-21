@@ -183,6 +183,19 @@ public final class CombatPresetParser {
         return suggestions;
     }
 
+    public static boolean isKnownOptionToken(String token) {
+        String normalized = normalizeOption(token);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        try {
+            validate("-" + normalized);
+            return true;
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
+
     private static String optionKey(String normalized) {
         if (normalized == null || normalized.isBlank()) {
             return null;
