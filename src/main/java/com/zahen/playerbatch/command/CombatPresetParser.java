@@ -21,8 +21,6 @@ public final class CombatPresetParser {
             "-netheritetools",
             "-shield",
             "-totem{5}",
-            "-selfheal{true}",
-            "-selfheal{false}",
             "-reach{3}",
             "-stap{true}",
             "-stap{false}",
@@ -75,14 +73,6 @@ public final class CombatPresetParser {
                 offhandCount = Math.max(1, parseBraceInt(normalized, 1));
                 continue;
             }
-            if (normalized.startsWith("selfheal")) {
-                selfHeal = parseBraceBoolean(normalized, false);
-                if (!selfHeal) {
-                    healingItemsEnabled = false;
-                    healingItems = List.of();
-                }
-                continue;
-            }
             if (normalized.startsWith("reach")) {
                 reach = parseRangedBraceInt(normalized, 3, 1, 10);
                 continue;
@@ -103,6 +93,7 @@ public final class CombatPresetParser {
                 HealingItemsParseResult result = parseHealingItems(normalized);
                 healingItemsEnabled = result.enabled();
                 healingItems = result.items();
+                selfHeal = result.enabled() || !result.items().isEmpty();
             }
         }
 
@@ -139,10 +130,6 @@ public final class CombatPresetParser {
             }
             if (normalized.startsWith("totem")) {
                 parseBraceInt(normalized, 1);
-                continue;
-            }
-            if (normalized.startsWith("selfheal")) {
-                parseBraceBoolean(normalized, false);
                 continue;
             }
             if (normalized.startsWith("reach")) {
@@ -208,9 +195,6 @@ public final class CombatPresetParser {
         }
         if (normalized.equals("shield") || normalized.startsWith("totem")) {
             return "offhand";
-        }
-        if (normalized.startsWith("selfheal")) {
-            return "selfheal";
         }
         if (normalized.startsWith("reach")) {
             return "reach";

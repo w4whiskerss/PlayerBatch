@@ -1475,7 +1475,7 @@ public final class PlayerBatchService {
             if (combatPreset != null) {
                 manageCombatInventory(fakePlayer, combatPreset);
                 ItemEntity desiredPickup = findDesiredPickup(fakePlayer, combatPreset);
-                if (combatPreset.selfHealEnabled() && hasLowHealth(fakePlayer)) {
+                if (hasLowHealth(fakePlayer)) {
                     HealingChoice healingChoice = findBestHealingChoice(fakePlayer);
                     if (healingChoice != null) {
                         if (brain.healCooldownTicks <= 0 && beginHealingSequence(fakePlayer, brain, healingChoice, threat != null)) {

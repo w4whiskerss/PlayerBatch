@@ -384,22 +384,18 @@ public final class PlayerBatchCommand {
         int tokenStart = findActiveOptionStart(remaining);
         String active = remaining.substring(tokenStart).trim();
         SuggestionsBuilder tokenBuilder = builder.createOffset(builder.getStart() + tokenStart);
-
-        if (active.isEmpty()) {
-            for (String formation : FORMATION_SUGGESTIONS) {
-                tokenBuilder.suggest(formation);
-            }
-            tokenBuilder.suggest("{W4Whiskers,PixelCrafter}");
-            for (String option : CombatPresetParser.OPTION_SUGGESTIONS) {
-                tokenBuilder.suggest(option);
-            }
-            tokenBuilder.suggest("kit{testkit}");
-            return tokenBuilder.buildFuture();
-        }
+        List<String> tokens = splitSummonTokens(remaining);
+        boolean endsWithWhitespace = !remaining.isEmpty() && Character.isWhitespace(remaining.charAt(remaining.length() - 1));
+        int activeIndex = endsWithWhitespace ? tokens.size() : Math.max(0, tokens.size() - 1);
+        boolean hasFormation = tokens.stream().limit(Math.max(0, tokens.size() - (endsWithWhitespace ? 0 : 1)))
+                .map(String::toLowerCase)
+                .anyMatch(PlayerBatchCommand::isFormationToken);
 
         String lowerActive = active.toLowerCase(Locale.ROOT);
-        if (lowerActive.startsWith("{")) {
-            tokenBuilder.suggest("{W4Whiskers,PixelCrafter}");
+        if (lowerActive.startsWith("-")) {
+            for (String option : CombatPresetParser.suggestOptions(remaining.toLowerCase(Locale.ROOT))) {
+                tokenBuilder.suggest(option);
+            }
             return tokenBuilder.buildFuture();
         }
         if (lowerActive.startsWith("kit") || lowerActive.startsWith("-kit")) {
@@ -408,22 +404,68 @@ public final class PlayerBatchCommand {
             }
             return tokenBuilder.buildFuture();
         }
-        if (lowerActive.startsWith("-")) {
-            for (String option : CombatPresetParser.suggestOptions(remaining.toLowerCase(Locale.ROOT))) {
-                tokenBuilder.suggest(option);
+        if (!hasFormation && activeIndex >= 1 || looksLikeFormationPrefix(lowerActive)) {
+            for (String formation : FORMATION_SUGGESTIONS) {
+                if (lowerActive.isEmpty() || formation.startsWith(lowerActive)) {
+                    tokenBuilder.suggest(formation);
+                }
             }
             return tokenBuilder.buildFuture();
         }
-
-        for (String formation : FORMATION_SUGGESTIONS) {
-            if (formation.startsWith(lowerActive)) {
-                tokenBuilder.suggest(formation);
+        if (hasFormation && (lowerActive.isEmpty() || lowerActive.startsWith("-"))) {
+            for (String option : CombatPresetParser.suggestOptions(remaining.toLowerCase(Locale.ROOT))) {
+                tokenBuilder.suggest(option);
             }
-        }
-        if ("{W4Whiskers,PixelCrafter}".startsWith(active)) {
-            tokenBuilder.suggest("{W4Whiskers,PixelCrafter}");
+            for (String kitName : KitStore.names()) {
+                tokenBuilder.suggest("kit{" + kitName + "}");
+            }
+            return tokenBuilder.buildFuture();
         }
         return tokenBuilder.buildFuture();
+    }
+
+    private static List<String> splitSummonTokens(String rawSetup) {
+        if (rawSetup == null || rawSetup.isBlank()) {
+            return List.of();
+        }
+        List<String> tokens = new java.util.ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int braceDepth = 0;
+        for (char character : rawSetup.toCharArray()) {
+            if (character == '{') {
+                braceDepth++;
+            } else if (character == '}') {
+                braceDepth = Math.max(0, braceDepth - 1);
+            }
+            if (Character.isWhitespace(character) && braceDepth == 0) {
+                if (!current.isEmpty()) {
+                    tokens.add(current.toString());
+                    current.setLength(0);
+                }
+                continue;
+            }
+            current.append(character);
+        }
+        if (!current.isEmpty()) {
+            tokens.add(current.toString());
+        }
+        return tokens;
+    }
+
+    private static boolean isFormationToken(String token) {
+        return FORMATION_SUGGESTIONS.contains(token) || token.equals("single block") || token.equals("singleblock");
+    }
+
+    private static boolean looksLikeFormationPrefix(String token) {
+        if (token == null || token.isEmpty()) {
+            return false;
+        }
+        for (String formation : FORMATION_SUGGESTIONS) {
+            if (formation.startsWith(token)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
 
