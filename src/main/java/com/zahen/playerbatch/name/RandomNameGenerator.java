@@ -2,12 +2,11 @@ package com.zahen.playerbatch.name;
 
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Random;
 import java.util.Set;
 
 public final class RandomNameGenerator {
-    private static final String CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
-    private static final int MIN_LENGTH = 4;
     private static final int MAX_LENGTH = 16;
     private static final Random RANDOM = new Random();
     private static final List<String> PREFIXES = List.of(
@@ -22,31 +21,28 @@ public final class RandomNameGenerator {
 
     public static Set<String> generateUniqueNames(int count, Set<String> excludedNames) {
         Set<String> names = new LinkedHashSet<>();
+        Set<String> excludedLower = new LinkedHashSet<>();
+        for (String excludedName : excludedNames) {
+            excludedLower.add(excludedName.toLowerCase(Locale.ROOT));
+        }
         while (names.size() < count) {
             String candidate = generateName();
-            if (!excludedNames.contains(candidate)) {
+            String lowered = candidate.toLowerCase(Locale.ROOT);
+            if (!excludedLower.contains(lowered)) {
                 names.add(candidate);
+                excludedLower.add(lowered);
             }
         }
         return names;
     }
 
     private static String generateName() {
-        if (RANDOM.nextBoolean()) {
-            String candidate = PREFIXES.get(RANDOM.nextInt(PREFIXES.size()))
-                    + SUFFIXES.get(RANDOM.nextInt(SUFFIXES.size()));
-            if (RANDOM.nextBoolean()) {
-                candidate += RANDOM.nextInt(90) + 10;
-            }
-            return candidate.length() > MAX_LENGTH ? candidate.substring(0, MAX_LENGTH) : candidate;
+        String candidate = PREFIXES.get(RANDOM.nextInt(PREFIXES.size()))
+                + SUFFIXES.get(RANDOM.nextInt(SUFFIXES.size()));
+        if (RANDOM.nextInt(5) == 0) {
+            candidate += RANDOM.nextInt(90) + 10;
         }
-
-        int length = RANDOM.nextInt(MAX_LENGTH - MIN_LENGTH + 1) + MIN_LENGTH;
-        StringBuilder builder = new StringBuilder(length);
-        for (int index = 0; index < length; index++) {
-            builder.append(CHARACTERS.charAt(RANDOM.nextInt(CHARACTERS.length())));
-        }
-        return builder.toString();
+        return candidate.length() > MAX_LENGTH ? candidate.substring(0, MAX_LENGTH) : candidate;
     }
 }
 

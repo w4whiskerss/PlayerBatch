@@ -24,8 +24,6 @@ public final class CombatPresetParser {
             "-selfheal{true}",
             "-selfheal{false}",
             "-reach{3}",
-            "-fakehit{true}",
-            "-fakehit{false}",
             "-stap{true}",
             "-stap{false}",
             "-damage{true}",
@@ -48,7 +46,6 @@ public final class CombatPresetParser {
         boolean healingItemsEnabled = false;
         List<BotLoadout.StackSpec> healingItems = new ArrayList<>();
         int reach = 3;
-        boolean fakeHitEnabled = true;
         boolean stapEnabled = false;
         boolean damageEnabled = true;
         boolean flex360Enabled = false;
@@ -90,10 +87,6 @@ public final class CombatPresetParser {
                 reach = parseRangedBraceInt(normalized, 3, 1, 10);
                 continue;
             }
-            if (normalized.startsWith("fakehit")) {
-                fakeHitEnabled = parseBraceBoolean(normalized, true);
-                continue;
-            }
             if (normalized.startsWith("stap")) {
                 stapEnabled = parseBraceBoolean(normalized, false);
                 continue;
@@ -122,7 +115,7 @@ public final class CombatPresetParser {
                 healingItemsEnabled,
                 healingItems,
                 reach,
-                fakeHitEnabled,
+                true,
                 stapEnabled,
                 damageEnabled,
                 flex360Enabled
@@ -154,10 +147,6 @@ public final class CombatPresetParser {
             }
             if (normalized.startsWith("reach")) {
                 parseRangedBraceInt(normalized, 3, 1, 10);
-                continue;
-            }
-            if (normalized.startsWith("fakehit")) {
-                parseBraceBoolean(normalized, true);
                 continue;
             }
             if (normalized.startsWith("stap")) {
@@ -225,9 +214,6 @@ public final class CombatPresetParser {
         }
         if (normalized.startsWith("reach")) {
             return "reach";
-        }
-        if (normalized.startsWith("fakehit")) {
-            return "fakehit";
         }
         if (normalized.startsWith("stap")) {
             return "stap";

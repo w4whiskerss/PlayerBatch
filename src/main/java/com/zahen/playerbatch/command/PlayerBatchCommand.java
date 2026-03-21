@@ -315,6 +315,13 @@ public final class PlayerBatchCommand {
                                                 context.getSource(),
                                                 StringArgumentType.getString(context, "name")
                                         ))))
+                        .then(Commands.literal("self")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(KitStore.names(), builder))
+                                        .executes(context -> PlayerBatchService.loadKitSelf(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "name")
+                                        ))))
                         .then(Commands.literal("list")
                                 .executes(context -> {
                                     List<String> names = KitStore.names();
@@ -328,7 +335,7 @@ public final class PlayerBatchCommand {
                 .then(Commands.literal("help")
                         .executes(context -> {
                             context.getSource().sendSuccess(
-                                    () -> Component.literal("Use /playerbatch summon <count> {optional,names} or /playersummon <count> {optional,names}."),
+                                    () -> Component.literal("Use /playerbatch summon <count> [formation] [{names}] [options], /playerbatch preset combat ..., or /playersummon <count> {optional,names}."),
                                     false
                             );
                             return 1;
@@ -347,7 +354,7 @@ public final class PlayerBatchCommand {
                         ""
                 ))
                 .then(Commands.argument("names", StringArgumentType.greedyString())
-                        .executes(context -> PlayerBatchService.requestSummon(
+                        .executes(context -> PlayerBatchService.requestSummonAdvanced(
                                 context.getSource(),
                                 IntegerArgumentType.getInteger(context, "count"),
                                 StringArgumentType.getString(context, "names")

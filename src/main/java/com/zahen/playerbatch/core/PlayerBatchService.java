@@ -83,6 +83,16 @@ public final class PlayerBatchService {
         return requestSummon(source, count, rawNames, new BotConfig(rawFormation, new BotLoadout()));
     }
 
+    public static int requestSummonAdvanced(CommandSourceStack source, int count, String rawSetup) {
+        try {
+            SummonSetup summonSetup = parseSummonSetup(rawSetup);
+            return requestSummon(source, count, summonSetup.rawNames(), summonSetup.config());
+        } catch (IllegalArgumentException exception) {
+            source.sendFailure(Component.literal(exception.getMessage()));
+            return 0;
+        }
+    }
+
     public static int requestSummon(CommandSourceStack source, int count, String rawNames, BotConfig config) {
         if (source.getServer() == null) {
             return 0;
@@ -471,6 +481,27 @@ public final class PlayerBatchService {
 
         source.sendSuccess(() -> Component.literal("Loaded kit '" + name + "' onto " + affected + " selected bot" + suffix(affected) + "."), true);
         return affected;
+    }
+
+    public static int loadKitSelf(CommandSourceStack source, String name) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.literal("Only players can load kits onto themselves."));
+            return 0;
+        }
+
+        BotLoadout loadout = KitStore.get(name);
+        if (loadout == null || loadout.isEmpty()) {
+            source.sendFailure(Component.literal("Unknown or empty kit: " + name));
+            return 0;
+        }
+
+        clearPlayerLoadout(player);
+        loadout.applyTo(player);
+        player.getInventory().setChanged();
+        player.containerMenu.broadcastChanges();
+        source.sendSuccess(() -> Component.literal("Loaded kit '" + name + "' onto yourself."), true);
+        return 1;
     }
 
     public static int summonSavedCombatPreset(CommandSourceStack source, String name, Integer overrideCount) {
@@ -1610,7 +1641,7 @@ public final class PlayerBatchService {
             EntityPlayerActionPack actionPack = actionPack(source);
             lookAtTarget(source, threat);
             actionPack.setSneaking(false);
-            actionPack.setSprinting(false);
+            actionPack.setSprinting(backwardPower >= 1.0F);
             actionPack.setStrafing(brain.unstuckStrafeTicks > 0 ? brain.unstuckStrafeDirection * 0.5F : 0.0F);
             actionPack.setForward(-Math.max(0.35F, Math.min(1.0F, backwardPower)));
             if (shouldJumpTowardTarget(source, threat, away.normalize().scale(0.7D), brain)) {
@@ -1880,8 +1911,8 @@ public final class PlayerBatchService {
                     useKind,
                     hand,
                     stack.getCount(),
-                    underThreat ? 10 : 6,
-                    80
+                    underThreat ? 18 : 8,
+                    110
             );
             return true;
         }
@@ -1917,12 +1948,12 @@ public final class PlayerBatchService {
                 case THROW_POTION -> {
                     if (state.phaseTicks > 4) {
                         if (threat != null) {
-                            moveAwayFromThreat(fakePlayer, threat, 0.85F, brain);
+                            moveAwayFromThreat(fakePlayer, threat, 1.15F, brain);
                         } else {
-                            actionPack.setForward(-0.65F);
+                            actionPack.setForward(-0.85F);
                             actionPack.setStrafing(0.0F);
                             actionPack.setSneaking(false);
-                            actionPack.setSprinting(false);
+                            actionPack.setSprinting(true);
                         }
                     } else {
                         actionPack.setForward(0.0F);
@@ -1943,12 +1974,12 @@ public final class PlayerBatchService {
                 case EAT, DRINK -> {
                     if (state.phaseTicks > 0) {
                         if (threat != null) {
-                            moveAwayFromThreat(fakePlayer, threat, 0.7F, brain);
+                            moveAwayFromThreat(fakePlayer, threat, 1.0F, brain);
                         } else {
-                            actionPack.setForward(-0.45F);
+                            actionPack.setForward(-0.7F);
                             actionPack.setStrafing(0.0F);
                             actionPack.setSneaking(false);
-                            actionPack.setSprinting(false);
+                            actionPack.setSprinting(true);
                         }
                         state.phaseTicks--;
                         if (state.phaseTicks == 0) {
@@ -2046,7 +2077,7 @@ public final class PlayerBatchService {
                 return;
             }
             source.swing(InteractionHand.MAIN_HAND, true);
-            if (combatPreset != null && (!combatPreset.damageEnabled() || !combatPreset.fakeHitEnabled())) {
+            if (combatPreset != null && !combatPreset.damageEnabled()) {
                 applyFakeHit(source, target);
             } else {
                 source.attack(target);
@@ -2145,6 +2176,7 @@ public final class PlayerBatchService {
         private final CommandSourceStack executionSource;
         private final Deque<SummonEntry> remainingEntries;
         private final List<String> batchNames;
+        private final Set<String> batchNameKeys;
         private final Map<String, BotConfig> plannedConfigs;
         private final Set<String> pendingTagNames = new LinkedHashSet<>();
         private final Map<String, BotConfig> pendingConfigs = new LinkedHashMap<>();
@@ -2166,6 +2198,10 @@ public final class PlayerBatchService {
             this.config = config;
             this.formation = config.formation();
             this.batchNames = List.copyOf(names);
+            this.batchNameKeys = names.stream()
+                    .map(PlayerBatchService::normalizePlayerName)
+                    .filter(Objects::nonNull)
+                    .collect(LinkedHashSet::new, Set::add, Set::addAll);
             this.plannedConfigs = buildPlannedConfigs(names, config);
             this.remainingEntries = new ArrayDeque<>(buildFormationEntries(source, names, formation));
             this.totalCount = names.size();
@@ -2209,16 +2245,19 @@ public final class PlayerBatchService {
             String command = nextEntry.command();
             try {
                 boolean accepted = CommandCompat.performPrefixedCommand(executionSource, command);
-                ServerPlayer spawnedPlayer = server.getPlayerList().getPlayerByName(nextName);
+                String nameKey = normalizePlayerName(nextName);
+                ServerPlayer spawnedPlayer = findPlayerByNormalizedName(nameKey);
                 if (accepted || spawnedPlayer != null) {
                     owner.markManagedName(nextName);
                     successCount++;
-                    BotConfig spawnConfig = plannedConfigs.getOrDefault(nextName, baseConfig());
+                    BotConfig spawnConfig = plannedConfigs.getOrDefault(nameKey, baseConfig());
                     if (spawnedPlayer instanceof EntityPlayerMPFake fakePlayer) {
                         owner.markManagedBot(fakePlayer);
                     }
-                    pendingTagNames.add(nextName);
-                    pendingConfigs.put(nextName, spawnConfig);
+                    if (nameKey != null) {
+                        pendingTagNames.add(nameKey);
+                        pendingConfigs.put(nameKey, spawnConfig);
+                    }
                     debug("Spawn accepted for {} in {} formation", nextName, formation);
                 } else {
                     failCount++;
@@ -2231,12 +2270,12 @@ public final class PlayerBatchService {
         }
 
         private void tryTagKnownPlayers() {
-            List<String> tagged = new ArrayList<>();
-            for (String pendingName : pendingTagNames) {
-                ServerPlayer queuedPlayer = server.getPlayerList().getPlayerByName(pendingName);
-                if (queuedPlayer instanceof EntityPlayerMPFake fakePlayer) {
+            Set<String> tagged = new LinkedHashSet<>();
+            for (EntityPlayerMPFake fakePlayer : owner.fakePlayers()) {
+                String nameKey = normalizePlayerName(fakePlayer.getGameProfile().name());
+                if (nameKey != null && pendingTagNames.contains(nameKey)) {
                     owner.markManagedBot(fakePlayer);
-                    tagged.add(pendingName);
+                    tagged.add(nameKey);
                 }
             }
             pendingTagNames.removeAll(tagged);
@@ -2247,7 +2286,7 @@ public final class PlayerBatchService {
                 reserved.add(entry.name().toLowerCase(Locale.ROOT));
             }
             for (String pendingTagName : pendingTagNames) {
-                reserved.add(pendingTagName.toLowerCase(Locale.ROOT));
+                reserved.add(pendingTagName);
             }
         }
 
@@ -2272,24 +2311,24 @@ public final class PlayerBatchService {
         }
 
         private void tagAllBatchBotsOnce() {
-            for (String batchName : batchNames) {
-                ServerPlayer player = server.getPlayerList().getPlayerByName(batchName);
-                if (player instanceof EntityPlayerMPFake fakePlayer) {
+            for (EntityPlayerMPFake fakePlayer : owner.fakePlayers()) {
+                String nameKey = normalizePlayerName(fakePlayer.getGameProfile().name());
+                if (nameKey != null && batchNameKeys.contains(nameKey)) {
                     owner.markManagedBot(fakePlayer);
-                    pendingTagNames.remove(batchName);
+                    pendingTagNames.remove(nameKey);
                 }
             }
             tryTagKnownPlayers();
         }
 
         private void applyDeferredBatchConfiguration() {
-            for (String batchName : batchNames) {
-                ServerPlayer player = server.getPlayerList().getPlayerByName(batchName);
-                if (player instanceof EntityPlayerMPFake fakePlayer) {
+            for (EntityPlayerMPFake fakePlayer : owner.fakePlayers()) {
+                String nameKey = normalizePlayerName(fakePlayer.getGameProfile().name());
+                if (nameKey != null && batchNameKeys.contains(nameKey)) {
                     owner.clearSelectionState(fakePlayer);
                     cleanupManagedBot(fakePlayer);
                     owner.markManagedBot(fakePlayer);
-                    applyConfig(fakePlayer, plannedConfigs.getOrDefault(batchName, baseConfig()));
+                    applyConfig(fakePlayer, plannedConfigs.getOrDefault(nameKey, baseConfig()));
                 }
             }
             pendingTagNames.clear();
@@ -2321,7 +2360,10 @@ public final class PlayerBatchService {
             Map<String, BotConfig> result = new LinkedHashMap<>();
             BotConfig baseConfig = baseConfig();
             for (String name : names) {
-                result.put(name, baseConfig);
+                String nameKey = normalizePlayerName(name);
+                if (nameKey != null) {
+                    result.put(nameKey, baseConfig);
+                }
             }
             if (batchConfig.distributions().isEmpty()) {
                 return result;
@@ -2347,10 +2389,25 @@ public final class PlayerBatchService {
                         batchConfig.combatPreset()
                 );
                 for (int assigned = 0; assigned < ruleCount && cursor < allocationOrder.size(); assigned++, cursor++) {
-                    result.put(allocationOrder.get(cursor), distributedConfig);
+                    String nameKey = normalizePlayerName(allocationOrder.get(cursor));
+                    if (nameKey != null) {
+                        result.put(nameKey, distributedConfig);
+                    }
                 }
             }
             return result;
+        }
+
+        private ServerPlayer findPlayerByNormalizedName(String nameKey) {
+            if (nameKey == null) {
+                return null;
+            }
+            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                if (nameKey.equals(normalizePlayerName(player.getGameProfile().name()))) {
+                    return player;
+                }
+            }
+            return null;
         }
 
         private List<Integer> allocateDistributionCounts(int totalBots, List<BotConfig.DistributionRule> rules) {
@@ -2626,6 +2683,124 @@ public final class PlayerBatchService {
         };
     }
 
+    private static SummonSetup parseSummonSetup(String rawSetup) {
+        if (rawSetup == null || rawSetup.isBlank()) {
+            return new SummonSetup("", BotConfig.empty());
+        }
+
+        List<String> tokens = splitSetupTokens(rawSetup);
+        String formation = DEFAULT_FORMATION;
+        String rawNames = "";
+        String kitName = null;
+        List<String> optionTokens = new ArrayList<>();
+        List<String> residualTokens = new ArrayList<>();
+        boolean recognized = false;
+
+        for (String token : tokens) {
+            String trimmed = token.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+
+            String normalizedToken = trimmed.toLowerCase(Locale.ROOT);
+            String normalizedFormation = normalizeFormation(trimmed);
+            if (!trimmed.startsWith("{") && !trimmed.startsWith("-") && normalizedFormation != null) {
+                formation = normalizedFormation;
+                recognized = true;
+                continue;
+            }
+            if (isStandaloneNamesToken(trimmed)) {
+                rawNames = trimmed;
+                recognized = true;
+                continue;
+            }
+            if (isKitToken(normalizedToken)) {
+                kitName = extractKitName(trimmed);
+                recognized = true;
+                continue;
+            }
+            if (trimmed.startsWith("-")) {
+                optionTokens.add(trimmed);
+                recognized = true;
+                continue;
+            }
+            residualTokens.add(trimmed);
+        }
+
+        if (!recognized) {
+            return new SummonSetup(rawSetup.trim(), BotConfig.empty());
+        }
+
+        if (rawNames.isBlank() && !residualTokens.isEmpty()) {
+            rawNames = String.join(" ", residualTokens);
+        }
+
+        BotLoadout loadout = new BotLoadout();
+        if (kitName != null) {
+            BotLoadout savedKit = KitStore.get(kitName);
+            if (savedKit == null || savedKit.isEmpty()) {
+                throw new IllegalArgumentException("Unknown or empty kit: " + kitName);
+            }
+            loadout = savedKit.copy();
+        }
+
+        CombatPresetSpec combatPreset = null;
+        if (!optionTokens.isEmpty()) {
+            String rawOptions = String.join(" ", optionTokens);
+            CombatPresetParser.validate(rawOptions);
+            combatPreset = CombatPresetParser.parse(rawOptions);
+            loadout = loadout.mergedWith(combatPreset.createLoadout());
+        }
+
+        return new SummonSetup(rawNames, new BotConfig(formation, loadout, combatPreset));
+    }
+
+    private static List<String> splitSetupTokens(String rawSetup) {
+        List<String> tokens = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int braceDepth = 0;
+        for (char character : rawSetup.toCharArray()) {
+            if (character == '{') {
+                braceDepth++;
+            } else if (character == '}') {
+                braceDepth = Math.max(0, braceDepth - 1);
+            }
+            if (Character.isWhitespace(character) && braceDepth == 0) {
+                if (!current.isEmpty()) {
+                    tokens.add(current.toString());
+                    current.setLength(0);
+                }
+                continue;
+            }
+            current.append(character);
+        }
+        if (!current.isEmpty()) {
+            tokens.add(current.toString());
+        }
+        return tokens;
+    }
+
+    private static boolean isStandaloneNamesToken(String token) {
+        return token.startsWith("{") && token.endsWith("}") && token.contains(",");
+    }
+
+    private static boolean isKitToken(String token) {
+        return token.startsWith("kit{") || token.startsWith("-kit{");
+    }
+
+    private static String extractKitName(String token) {
+        int start = token.indexOf('{');
+        int end = token.lastIndexOf('}');
+        if (start < 0 || end <= start) {
+            throw new IllegalArgumentException("Expected kit{name} in summon setup.");
+        }
+        String name = token.substring(start + 1, end).trim();
+        if (name.isEmpty()) {
+            throw new IllegalArgumentException("Kit name cannot be empty.");
+        }
+        return name;
+    }
+
     private static String makeUniqueSummonName(String requestedName, Collection<String> reservedLowercaseNames) {
         String baseName = requestedName == null || requestedName.isBlank() ? "PlayerBatch" : requestedName.trim();
         String normalizedBase = baseName.toLowerCase(Locale.ROOT);
@@ -2702,6 +2877,9 @@ public final class PlayerBatchService {
 
     private static String suffix(int count) {
         return count == 1 ? "" : "s";
+    }
+
+    private record SummonSetup(String rawNames, BotConfig config) {
     }
 
     private record GroupResult(boolean success, String message, int affected) {
@@ -2901,6 +3079,16 @@ public final class PlayerBatchService {
         }
         if (preserveManagedTag && !fakePlayer.getTags().contains(BOT_TAG)) {
             fakePlayer.addTag(BOT_TAG);
+        }
+    }
+
+    private static void clearPlayerLoadout(ServerPlayer player) {
+        player.removeAllEffects();
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            player.setItemSlot(slot, ItemStack.EMPTY);
+        }
+        for (int index = 0; index < player.getInventory().getContainerSize(); index++) {
+            player.getInventory().setItem(index, ItemStack.EMPTY);
         }
     }
 }

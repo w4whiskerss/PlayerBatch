@@ -215,28 +215,36 @@ public final class BotLoadout {
     }
 
     public void applyTo(EntityPlayerMPFake fakePlayer) {
+        applyToInventoryCarrier(fakePlayer);
+    }
+
+    public void applyTo(ServerPlayer player) {
+        applyToInventoryCarrier(player);
+    }
+
+    private void applyToInventoryCarrier(ServerPlayer player) {
         for (Map.Entry<EquipmentSlot, StackSpec> entry : equipment.entrySet()) {
             ItemStack stack = createStack(entry.getValue());
             if (!stack.isEmpty()) {
-                fakePlayer.setItemSlot(entry.getKey(), stack);
+                player.setItemSlot(entry.getKey(), stack);
             }
         }
         for (Map.Entry<Integer, StackSpec> entry : hotbar.entrySet()) {
             ItemStack stack = createStack(entry.getValue());
-            if (!stack.isEmpty() && entry.getKey() >= 0 && entry.getKey() < fakePlayer.getInventory().getContainerSize()) {
-                fakePlayer.getInventory().setItem(entry.getKey(), stack);
+            if (!stack.isEmpty() && entry.getKey() >= 0 && entry.getKey() < player.getInventory().getContainerSize()) {
+                player.getInventory().setItem(entry.getKey(), stack);
             }
         }
         for (Map.Entry<Integer, StackSpec> entry : inventory.entrySet()) {
             ItemStack stack = createStack(entry.getValue());
-            if (!stack.isEmpty() && entry.getKey() >= 9 && entry.getKey() < fakePlayer.getInventory().getContainerSize()) {
-                fakePlayer.getInventory().setItem(entry.getKey(), stack);
+            if (!stack.isEmpty() && entry.getKey() >= 9 && entry.getKey() < player.getInventory().getContainerSize()) {
+                player.getInventory().setItem(entry.getKey(), stack);
             }
         }
         for (EffectSpec effectSpec : effects) {
             Holder<MobEffect> holder = resolveEffect(effectSpec.effectId());
             if (holder != null) {
-                fakePlayer.addEffect(new MobEffectInstance(holder, Math.max(1, effectSpec.durationSeconds()) * 20, Math.max(0, effectSpec.amplifier())));
+                player.addEffect(new MobEffectInstance(holder, Math.max(1, effectSpec.durationSeconds()) * 20, Math.max(0, effectSpec.amplifier())));
             }
         }
     }
