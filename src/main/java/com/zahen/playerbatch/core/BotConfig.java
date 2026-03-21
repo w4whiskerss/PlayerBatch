@@ -87,6 +87,10 @@ public final class BotConfig {
         }
         if (combatPreset != null) {
             properties.setProperty("combatPreset.enabled", "true");
+            properties.setProperty("combatPreset.offhandMode", combatPreset.offhandMode().name());
+            properties.setProperty("combatPreset.offhandCount", Integer.toString(combatPreset.offhandCount()));
+            properties.setProperty("combatPreset.selfHealEnabled", Boolean.toString(combatPreset.selfHealEnabled()));
+            properties.setProperty("combatPreset.healingItemsEnabled", Boolean.toString(combatPreset.healingItemsEnabled()));
             properties.setProperty("combatPreset.reach", Integer.toString(combatPreset.reach()));
             properties.setProperty("combatPreset.fakeHitEnabled", Boolean.toString(combatPreset.fakeHitEnabled()));
             properties.setProperty("combatPreset.stapEnabled", Boolean.toString(combatPreset.stapEnabled()));
@@ -159,13 +163,19 @@ public final class BotConfig {
         }
         CombatPresetSpec combatPreset = null;
         if (Boolean.parseBoolean(properties.getProperty("combatPreset.enabled", "false"))) {
+            CombatPresetSpec.OffhandMode offhandMode;
+            try {
+                offhandMode = CombatPresetSpec.OffhandMode.valueOf(properties.getProperty("combatPreset.offhandMode", "SHIELD"));
+            } catch (IllegalArgumentException ignored) {
+                offhandMode = CombatPresetSpec.OffhandMode.SHIELD;
+            }
             combatPreset = new CombatPresetSpec(
                     CombatPresetSpec.ArmorTier.NONE,
                     CombatPresetSpec.ToolTier.NONE,
-                    CombatPresetSpec.OffhandMode.SHIELD,
-                    1,
-                    false,
-                    false,
+                    offhandMode,
+                    parseInt(properties.getProperty("combatPreset.offhandCount"), 1),
+                    Boolean.parseBoolean(properties.getProperty("combatPreset.selfHealEnabled", "false")),
+                    Boolean.parseBoolean(properties.getProperty("combatPreset.healingItemsEnabled", "false")),
                     List.of(),
                     parseInt(properties.getProperty("combatPreset.reach"), 3),
                     Boolean.parseBoolean(properties.getProperty("combatPreset.fakeHitEnabled", "true")),

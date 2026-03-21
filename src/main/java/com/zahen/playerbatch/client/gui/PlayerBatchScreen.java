@@ -37,7 +37,7 @@ public final class PlayerBatchScreen extends Screen {
         this.parent = parent;
         this.preferences = PlayerBatchUiPreferences.load();
         this.snapshot = PlayerBatchClient.latestSnapshot();
-        this.step = WizardStep.fromPreference(preferences.summonPane());
+        this.step = WizardStep.BASICS;
     }
 
     @Override
@@ -66,8 +66,8 @@ public final class PlayerBatchScreen extends Screen {
     }
 
     private void initBasicsStep(int left, int top) {
-        countBox = addBox(left + 18, top + 78, 88, preferences.summonCount(), this::saveBasicsDraft);
-        namesBox = addBox(left + 120, top + 78, panelWidth() - 156, preferences.summonNames(), this::saveBasicsDraft);
+        countBox = addBox(left + 18, top + 112, 88, preferences.summonCount(), this::saveBasicsDraft);
+        namesBox = addBox(left + 120, top + 112, panelWidth() - 156, preferences.summonNames(), this::saveBasicsDraft);
         namesBox.setMaxLength(32767);
         countBox.setMaxLength(32767);
     }
@@ -79,20 +79,22 @@ public final class PlayerBatchScreen extends Screen {
             preferences.setSummonArmorMaterial(cycle(ARMOR_MATERIALS, preferences.summonArmorMaterial()));
             preferences.save();
             init();
-        }).bounds(left + 18, top + 86, buttonWidth, 20).build());
+        }).bounds(left + 18, top + 120, buttonWidth, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Tools: " + preferences.summonToolMaterial()), button -> {
             preferences.setSummonToolMaterial(cycle(TOOL_MATERIALS, preferences.summonToolMaterial()));
             preferences.save();
             init();
-        }).bounds(left + 18 + buttonWidth + gap, top + 86, buttonWidth, 20).build());
+        }).bounds(left + 18 + buttonWidth + gap, top + 120, buttonWidth, 20).build());
     }
 
     private void initArgumentsStep(int left, int top) {
         int buttonWidth = 168;
         int rowGap = 14;
         int columnGap = 18;
-        int rowOneY = top + 88;
+        int rowOneY = top + 112;
         int rowTwoY = rowOneY + 20 + rowGap;
+        int rowThreeY = rowTwoY + 20 + rowGap;
+        int rowFourY = rowThreeY + 20 + rowGap;
 
         addRenderableWidget(Button.builder(Component.literal("Reach: " + preferences.summonReach()), button -> {
             preferences.setSummonReach(nextReach(preferences.summonReach()));
@@ -118,7 +120,23 @@ public final class PlayerBatchScreen extends Screen {
             preferences.setSummon360Flex(toggle(preferences.summon360Flex()));
             preferences.save();
             init();
-        }).bounds(left + 18, rowTwoY + 20 + rowGap, buttonWidth, 20).build());
+        }).bounds(left + 18, rowThreeY, buttonWidth, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(toggleLabel("Self Heal", preferences.summonSelfHeal())), button -> {
+            preferences.setSummonSelfHeal(toggle(preferences.summonSelfHeal()));
+            if (!parseBoolean(preferences.summonSelfHeal(), false)) {
+                preferences.setSummonHealingItems("false");
+            }
+            preferences.save();
+            init();
+        }).bounds(left + 18 + buttonWidth + columnGap, rowThreeY, buttonWidth, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(toggleLabel("Healing Items", preferences.summonHealingItems())), button -> {
+            preferences.setSummonHealingItems(toggle(preferences.summonHealingItems()));
+            if (parseBoolean(preferences.summonHealingItems(), false)) {
+                preferences.setSummonSelfHeal("true");
+            }
+            preferences.save();
+            init();
+        }).bounds(left + 18, rowFourY, buttonWidth, 20).build());
     }
 
     private void initFormationStep(int left, int top) {
@@ -126,7 +144,7 @@ public final class PlayerBatchScreen extends Screen {
             preferences.setSummonFormation(cycle(FORMATIONS, preferences.summonFormation()));
             preferences.save();
             init();
-        }).bounds(left + 18, top + 88, 188, 20).build());
+        }).bounds(left + 18, top + 120, 188, 20).build());
     }
 
     @Override
@@ -142,10 +160,10 @@ public final class PlayerBatchScreen extends Screen {
         guiGraphics.drawString(font, "Step " + step.number + " of 4: " + step.title, left, top + 18, 0xFF9BE5B8);
 
         switch (step) {
-            case BASICS -> renderBasics(guiGraphics, left, top + 48);
-            case LOADOUT -> renderLoadout(guiGraphics, left, top + 48);
-            case ARGUMENTS -> renderArguments(guiGraphics, left, top + 48);
-            case FORMATION -> renderFormation(guiGraphics, left, top + 48);
+            case BASICS -> renderBasics(guiGraphics, left, top + 72);
+            case LOADOUT -> renderLoadout(guiGraphics, left, top + 72);
+            case ARGUMENTS -> renderArguments(guiGraphics, left, top + 72);
+            case FORMATION -> renderFormation(guiGraphics, left, top + 72);
         }
 
         renderStatus(guiGraphics, left, panelBottom() - 78);
@@ -170,6 +188,7 @@ public final class PlayerBatchScreen extends Screen {
     private void renderArguments(GuiGraphics guiGraphics, int left, int top) {
         guiGraphics.drawString(font, "Toggle the combat-style arguments you want on the summoned bots.", left, top, 0xFFC3CED7);
         guiGraphics.drawString(font, "Everything here feeds the backend preset logic, not fake GUI-only state.", left, top + 14, 0xFF8FB7D1);
+        guiGraphics.drawString(font, "Reach / fake hit / STAP / damage / 360 flex / self heal / healing items", left, top + 38, 0xFFD9E4F1);
     }
 
     private void renderFormation(GuiGraphics guiGraphics, int left, int top) {
@@ -234,6 +253,9 @@ public final class PlayerBatchScreen extends Screen {
                 count,
                 false
         ));
+        resetWizard();
+        send(new PlayerBatchNetworking.PlayerBatchActionPayload(PlayerBatchNetworking.ActionKind.CLOSE_SCREEN, "", "", 0, false));
+        Minecraft.getInstance().setScreen(parent);
     }
 
     private BotConfig buildWizardConfig() {
@@ -245,8 +267,8 @@ public final class PlayerBatchScreen extends Screen {
                 CombatPresetSpec.ToolTier.NONE,
                 CombatPresetSpec.OffhandMode.SHIELD,
                 1,
-                false,
-                false,
+                parseBoolean(preferences.summonSelfHeal(), false),
+                parseBoolean(preferences.summonHealingItems(), false),
                 List.of(),
                 parseInt(preferences.summonReach(), 3),
                 parseBoolean(preferences.summonFakeHit(), true),
@@ -398,8 +420,15 @@ public final class PlayerBatchScreen extends Screen {
     @Override
     public void onClose() {
         saveDraft();
+        resetWizard();
         send(new PlayerBatchNetworking.PlayerBatchActionPayload(PlayerBatchNetworking.ActionKind.CLOSE_SCREEN, "", "", 0, false));
         Minecraft.getInstance().setScreen(parent);
+    }
+
+    private void resetWizard() {
+        step = WizardStep.BASICS;
+        preferences.setSummonPane(WizardStep.BASICS.preferenceValue);
+        preferences.save();
     }
 
     private int panelLeft() {

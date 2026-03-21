@@ -24,6 +24,8 @@ public final class PlayerBatchUiPreferences {
     private static final String KEY_SUMMON_STAP = "summonStap";
     private static final String KEY_SUMMON_DAMAGE = "summonDamage";
     private static final String KEY_SUMMON_360_FLEX = "summon360Flex";
+    private static final String KEY_SUMMON_SELF_HEAL = "summonSelfHeal";
+    private static final String KEY_SUMMON_HEALING_ITEMS = "summonHealingItems";
     private static final String KEY_SUMMON_HEAD = "summonHead";
     private static final String KEY_SUMMON_CHEST = "summonChest";
     private static final String KEY_SUMMON_LEGS = "summonLegs";
@@ -72,6 +74,8 @@ public final class PlayerBatchUiPreferences {
     private String summonStap = "false";
     private String summonDamage = "true";
     private String summon360Flex = "false";
+    private String summonSelfHeal = "false";
+    private String summonHealingItems = "false";
     private String summonHead = "";
     private String summonChest = "";
     private String summonLegs = "";
@@ -136,6 +140,8 @@ public final class PlayerBatchUiPreferences {
         preferences.summonStap = read(properties, KEY_SUMMON_STAP, preferences.summonStap);
         preferences.summonDamage = read(properties, KEY_SUMMON_DAMAGE, preferences.summonDamage);
         preferences.summon360Flex = read(properties, KEY_SUMMON_360_FLEX, preferences.summon360Flex);
+        preferences.summonSelfHeal = read(properties, KEY_SUMMON_SELF_HEAL, preferences.summonSelfHeal);
+        preferences.summonHealingItems = read(properties, KEY_SUMMON_HEALING_ITEMS, preferences.summonHealingItems);
         preferences.summonHead = read(properties, KEY_SUMMON_HEAD, preferences.summonHead);
         preferences.summonChest = read(properties, KEY_SUMMON_CHEST, preferences.summonChest);
         preferences.summonLegs = read(properties, KEY_SUMMON_LEGS, preferences.summonLegs);
@@ -190,6 +196,8 @@ public final class PlayerBatchUiPreferences {
         properties.setProperty(KEY_SUMMON_STAP, summonStap);
         properties.setProperty(KEY_SUMMON_DAMAGE, summonDamage);
         properties.setProperty(KEY_SUMMON_360_FLEX, summon360Flex);
+        properties.setProperty(KEY_SUMMON_SELF_HEAL, summonSelfHeal);
+        properties.setProperty(KEY_SUMMON_HEALING_ITEMS, summonHealingItems);
         properties.setProperty(KEY_SUMMON_HEAD, summonHead);
         properties.setProperty(KEY_SUMMON_CHEST, summonChest);
         properties.setProperty(KEY_SUMMON_LEGS, summonLegs);
@@ -327,6 +335,22 @@ public final class PlayerBatchUiPreferences {
 
     public void setSummon360Flex(String summon360Flex) {
         this.summon360Flex = summon360Flex;
+    }
+
+    public String summonSelfHeal() {
+        return summonSelfHeal;
+    }
+
+    public void setSummonSelfHeal(String summonSelfHeal) {
+        this.summonSelfHeal = summonSelfHeal;
+    }
+
+    public String summonHealingItems() {
+        return summonHealingItems;
+    }
+
+    public void setSummonHealingItems(String summonHealingItems) {
+        this.summonHealingItems = summonHealingItems;
     }
 
     public String summonHead() {
