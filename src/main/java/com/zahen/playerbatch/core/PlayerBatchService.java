@@ -11,7 +11,6 @@ import com.zahen.playerbatch.config.KitStore;
 import com.zahen.playerbatch.config.PlayerBatchConfig;
 import com.zahen.playerbatch.item.SelectionWandItem;
 import com.zahen.playerbatch.name.NamePlanner;
-import com.zahen.playerbatch.network.PlayerBatchNetworking;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
@@ -346,18 +345,6 @@ public final class PlayerBatchService {
         return affected;
     }
 
-    public static int openGui(CommandSourceStack source) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("Only players can open the PlayerBatch GUI."));
-            return 0;
-        }
-
-        state(source.getServer()).addSubscriber(player.getUUID());
-        PlayerBatchNetworking.sendState(player, snapshot(source.getServer(), true));
-        return 1;
-    }
-
     public static int createGroup(CommandSourceStack source, String rawName) {
         GroupResult result = state(source.getServer()).createGroup(rawName);
         if (!result.success()) {
@@ -542,7 +529,7 @@ public final class PlayerBatchService {
     }
 
     public static void handleGuiClosed(ServerPlayer player) {
-        state(player.createCommandSourceStack().getServer()).removeSubscriber(player.getUUID());
+        // GUI removed; kept as a no-op for compatibility with older clients.
     }
 
     public static void handlePlayerDisconnect(ServerPlayer player) {
@@ -553,8 +540,7 @@ public final class PlayerBatchService {
     }
 
     public static void requestState(ServerPlayer player, boolean openScreen) {
-        state(player.createCommandSourceStack().getServer()).addSubscriber(player.getUUID());
-        PlayerBatchNetworking.sendState(player, snapshot(player.createCommandSourceStack().getServer(), openScreen));
+        // GUI removed; kept as a no-op for compatibility with older clients.
     }
 
     public static void applyLimitFromGui(ServerPlayer player, int value) {
@@ -1335,15 +1321,12 @@ public final class PlayerBatchService {
         }
 
         private void addSubscriber(UUID subscriber) {
-            subscribers.add(subscriber);
         }
 
         private void removeSubscriber(UUID subscriber) {
-            subscribers.remove(subscriber);
         }
 
         private void handlePlayerDisconnect(ServerPlayer player) {
-            subscribers.remove(player.getUUID());
             if (player instanceof EntityPlayerMPFake fakePlayer && isManagedBot(fakePlayer)) {
                 clearSelectionState(fakePlayer);
                 cleanupManagedBot(fakePlayer);
@@ -1361,15 +1344,6 @@ public final class PlayerBatchService {
         }
 
         private void broadcast(boolean openScreen) {
-            PlayerBatchSnapshot snapshot = snapshot(server, openScreen);
-            for (UUID subscriber : List.copyOf(subscribers)) {
-                ServerPlayer player = server.getPlayerList().getPlayer(subscriber);
-                if (player == null) {
-                    subscribers.remove(subscriber);
-                    continue;
-                }
-                PlayerBatchNetworking.sendState(player, snapshot);
-            }
         }
 
         private void cleanupSelection() {
@@ -1377,7 +1351,6 @@ public final class PlayerBatchService {
         }
 
         private void cleanupSubscribers() {
-            subscribers.removeIf(uuid -> server.getPlayerList().getPlayer(uuid) == null);
         }
 
         private List<String> reservedNames() {

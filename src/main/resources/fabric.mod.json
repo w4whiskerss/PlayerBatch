@@ -12,12 +12,6 @@
   "entrypoints": {
     "main": [
       "com.zahen.playerbatch.PlayerBatch"
-    ],
-    "client": [
-      "com.zahen.playerbatch.client.PlayerBatchClient"
-    ],
-    "modmenu": [
-      "com.zahen.playerbatch.client.ModMenuIntegration"
     ]
   },
   "depends": {

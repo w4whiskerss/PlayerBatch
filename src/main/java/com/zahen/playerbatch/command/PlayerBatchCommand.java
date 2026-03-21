@@ -99,9 +99,13 @@ public final class PlayerBatchCommand {
 
     private static LiteralArgumentBuilder<CommandSourceStack> buildRoot(String root) {
         return Commands.literal(root)
-                .executes(context -> PlayerBatchService.openGui(context.getSource()))
-                .then(Commands.literal("gui")
-                        .executes(context -> PlayerBatchService.openGui(context.getSource())))
+                .executes(context -> {
+                    context.getSource().sendSuccess(
+                            () -> Component.literal("PlayerBatch is command-only now. Use /" + root + " help."),
+                            false
+                    );
+                    return 1;
+                })
                 .then(Commands.literal("wand")
                         .executes(context -> PlayerBatchService.giveSelectionWand(context.getSource())))
                 .then(Commands.literal("clearselection")
