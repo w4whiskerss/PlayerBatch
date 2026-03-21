@@ -24,6 +24,7 @@ import java.util.concurrent.CompletableFuture;
 public final class PlayerBatchCommand {
     private static final List<String> DIRECTION_SUGGESTIONS = List.of("up", "below", "north", "south", "east", "west");
     private static final List<String> SLOT_SUGGESTIONS = List.of("head", "chest", "legs", "feet", "mainhand", "offhand");
+    private static final List<String> FORMATION_SUGGESTIONS = List.of("circle", "square", "triangle", "random", "single_block");
     private static final List<String> AI_MODE_SUGGESTIONS = List.of(
             BotAiMode.IDLE.displayName(),
             BotAiMode.COMBAT.displayName(),
@@ -335,7 +336,7 @@ public final class PlayerBatchCommand {
                 .then(Commands.literal("help")
                         .executes(context -> {
                             context.getSource().sendSuccess(
-                                    () -> Component.literal("Use /playerbatch summon <count> [formation] [{names}] [options], /playerbatch preset combat ..., or /playersummon <count> {optional,names}."),
+                                    () -> Component.literal("Use /playerbatch summon <count> <names> <formation> <arguments>, /playerbatch preset combat ..., or /playersummon <count> {optional,names}."),
                                     false
                             );
                             return 1;
@@ -354,6 +355,7 @@ public final class PlayerBatchCommand {
                         ""
                 ))
                 .then(Commands.argument("names", StringArgumentType.greedyString())
+                        .suggests((context, builder) -> suggestSummonSetup(builder))
                         .executes(context -> PlayerBatchService.requestSummonAdvanced(
                                 context.getSource(),
                                 IntegerArgumentType.getInteger(context, "count"),
@@ -375,6 +377,53 @@ public final class PlayerBatchCommand {
     private static int findActiveOptionStart(String remaining) {
         int lastSpace = Math.max(remaining.lastIndexOf(' '), remaining.lastIndexOf('\t'));
         return Math.max(0, lastSpace + 1);
+    }
+
+    private static CompletableFuture<Suggestions> suggestSummonSetup(SuggestionsBuilder builder) {
+        String remaining = builder.getRemaining();
+        int tokenStart = findActiveOptionStart(remaining);
+        String active = remaining.substring(tokenStart).trim();
+        SuggestionsBuilder tokenBuilder = builder.createOffset(builder.getStart() + tokenStart);
+
+        if (active.isEmpty()) {
+            for (String formation : FORMATION_SUGGESTIONS) {
+                tokenBuilder.suggest(formation);
+            }
+            tokenBuilder.suggest("{W4Whiskers,PixelCrafter}");
+            for (String option : CombatPresetParser.OPTION_SUGGESTIONS) {
+                tokenBuilder.suggest(option);
+            }
+            tokenBuilder.suggest("kit{testkit}");
+            return tokenBuilder.buildFuture();
+        }
+
+        String lowerActive = active.toLowerCase(Locale.ROOT);
+        if (lowerActive.startsWith("{")) {
+            tokenBuilder.suggest("{W4Whiskers,PixelCrafter}");
+            return tokenBuilder.buildFuture();
+        }
+        if (lowerActive.startsWith("kit") || lowerActive.startsWith("-kit")) {
+            for (String kitName : KitStore.names()) {
+                tokenBuilder.suggest("kit{" + kitName + "}");
+            }
+            return tokenBuilder.buildFuture();
+        }
+        if (lowerActive.startsWith("-")) {
+            for (String option : CombatPresetParser.suggestOptions(remaining.toLowerCase(Locale.ROOT))) {
+                tokenBuilder.suggest(option);
+            }
+            return tokenBuilder.buildFuture();
+        }
+
+        for (String formation : FORMATION_SUGGESTIONS) {
+            if (formation.startsWith(lowerActive)) {
+                tokenBuilder.suggest(formation);
+            }
+        }
+        if ("{W4Whiskers,PixelCrafter}".startsWith(active)) {
+            tokenBuilder.suggest("{W4Whiskers,PixelCrafter}");
+        }
+        return tokenBuilder.buildFuture();
     }
 }
 
