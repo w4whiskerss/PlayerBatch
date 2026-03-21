@@ -17,6 +17,13 @@ public final class PlayerBatchUiPreferences {
     private static final String KEY_SUMMON_NAMES = "summonNames";
     private static final String KEY_SUMMON_FORMATION = "summonFormation";
     private static final String KEY_SUMMON_PANE = "summonPane";
+    private static final String KEY_SUMMON_ARMOR_MATERIAL = "summonArmorMaterial";
+    private static final String KEY_SUMMON_TOOL_MATERIAL = "summonToolMaterial";
+    private static final String KEY_SUMMON_REACH = "summonReach";
+    private static final String KEY_SUMMON_FAKE_HIT = "summonFakeHit";
+    private static final String KEY_SUMMON_STAP = "summonStap";
+    private static final String KEY_SUMMON_DAMAGE = "summonDamage";
+    private static final String KEY_SUMMON_360_FLEX = "summon360Flex";
     private static final String KEY_SUMMON_HEAD = "summonHead";
     private static final String KEY_SUMMON_CHEST = "summonChest";
     private static final String KEY_SUMMON_LEGS = "summonLegs";
@@ -58,6 +65,13 @@ public final class PlayerBatchUiPreferences {
     private String summonNames = "";
     private String summonFormation = "circle";
     private String summonPane = "SETUP";
+    private String summonArmorMaterial = "diamond";
+    private String summonToolMaterial = "diamond";
+    private String summonReach = "3";
+    private String summonFakeHit = "true";
+    private String summonStap = "false";
+    private String summonDamage = "true";
+    private String summon360Flex = "false";
     private String summonHead = "";
     private String summonChest = "";
     private String summonLegs = "";
@@ -115,6 +129,13 @@ public final class PlayerBatchUiPreferences {
         preferences.summonNames = read(properties, KEY_SUMMON_NAMES, preferences.summonNames);
         preferences.summonFormation = read(properties, KEY_SUMMON_FORMATION, preferences.summonFormation);
         preferences.summonPane = read(properties, KEY_SUMMON_PANE, preferences.summonPane);
+        preferences.summonArmorMaterial = read(properties, KEY_SUMMON_ARMOR_MATERIAL, preferences.summonArmorMaterial);
+        preferences.summonToolMaterial = read(properties, KEY_SUMMON_TOOL_MATERIAL, preferences.summonToolMaterial);
+        preferences.summonReach = read(properties, KEY_SUMMON_REACH, preferences.summonReach);
+        preferences.summonFakeHit = read(properties, KEY_SUMMON_FAKE_HIT, preferences.summonFakeHit);
+        preferences.summonStap = read(properties, KEY_SUMMON_STAP, preferences.summonStap);
+        preferences.summonDamage = read(properties, KEY_SUMMON_DAMAGE, preferences.summonDamage);
+        preferences.summon360Flex = read(properties, KEY_SUMMON_360_FLEX, preferences.summon360Flex);
         preferences.summonHead = read(properties, KEY_SUMMON_HEAD, preferences.summonHead);
         preferences.summonChest = read(properties, KEY_SUMMON_CHEST, preferences.summonChest);
         preferences.summonLegs = read(properties, KEY_SUMMON_LEGS, preferences.summonLegs);
@@ -162,6 +183,13 @@ public final class PlayerBatchUiPreferences {
         properties.setProperty(KEY_SUMMON_NAMES, summonNames);
         properties.setProperty(KEY_SUMMON_FORMATION, summonFormation);
         properties.setProperty(KEY_SUMMON_PANE, summonPane);
+        properties.setProperty(KEY_SUMMON_ARMOR_MATERIAL, summonArmorMaterial);
+        properties.setProperty(KEY_SUMMON_TOOL_MATERIAL, summonToolMaterial);
+        properties.setProperty(KEY_SUMMON_REACH, summonReach);
+        properties.setProperty(KEY_SUMMON_FAKE_HIT, summonFakeHit);
+        properties.setProperty(KEY_SUMMON_STAP, summonStap);
+        properties.setProperty(KEY_SUMMON_DAMAGE, summonDamage);
+        properties.setProperty(KEY_SUMMON_360_FLEX, summon360Flex);
         properties.setProperty(KEY_SUMMON_HEAD, summonHead);
         properties.setProperty(KEY_SUMMON_CHEST, summonChest);
         properties.setProperty(KEY_SUMMON_LEGS, summonLegs);
@@ -243,6 +271,62 @@ public final class PlayerBatchUiPreferences {
 
     public void setSummonPane(String summonPane) {
         this.summonPane = summonPane;
+    }
+
+    public String summonArmorMaterial() {
+        return summonArmorMaterial;
+    }
+
+    public void setSummonArmorMaterial(String summonArmorMaterial) {
+        this.summonArmorMaterial = summonArmorMaterial;
+    }
+
+    public String summonToolMaterial() {
+        return summonToolMaterial;
+    }
+
+    public void setSummonToolMaterial(String summonToolMaterial) {
+        this.summonToolMaterial = summonToolMaterial;
+    }
+
+    public String summonReach() {
+        return summonReach;
+    }
+
+    public void setSummonReach(String summonReach) {
+        this.summonReach = summonReach;
+    }
+
+    public String summonFakeHit() {
+        return summonFakeHit;
+    }
+
+    public void setSummonFakeHit(String summonFakeHit) {
+        this.summonFakeHit = summonFakeHit;
+    }
+
+    public String summonStap() {
+        return summonStap;
+    }
+
+    public void setSummonStap(String summonStap) {
+        this.summonStap = summonStap;
+    }
+
+    public String summonDamage() {
+        return summonDamage;
+    }
+
+    public void setSummonDamage(String summonDamage) {
+        this.summonDamage = summonDamage;
+    }
+
+    public String summon360Flex() {
+        return summon360Flex;
+    }
+
+    public void setSummon360Flex(String summon360Flex) {
+        this.summon360Flex = summon360Flex;
     }
 
     public String summonHead() {

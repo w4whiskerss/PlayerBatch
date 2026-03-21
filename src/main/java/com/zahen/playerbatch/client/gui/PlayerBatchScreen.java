@@ -4,6 +4,7 @@ import com.zahen.playerbatch.client.PlayerBatchClient;
 import com.zahen.playerbatch.client.PlayerBatchUiPreferences;
 import com.zahen.playerbatch.core.BotConfig;
 import com.zahen.playerbatch.core.BotLoadout;
+import com.zahen.playerbatch.core.CombatPresetSpec;
 import com.zahen.playerbatch.core.PlayerBatchService;
 import com.zahen.playerbatch.network.PlayerBatchNetworking;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -15,509 +16,309 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.EquipmentSlot;
 
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 
 public final class PlayerBatchScreen extends Screen {
-    private static final int PANEL_MARGIN = 12;
+    private static final List<String> ARMOR_MATERIALS = List.of("none", "leather", "chainmail", "iron", "golden", "diamond", "netherite");
+    private static final List<String> TOOL_MATERIALS = List.of("none", "wooden", "stone", "iron", "diamond", "netherite");
     private static final List<String> FORMATIONS = List.of("circle", "square", "triangle", "random", "single block");
 
     private final Screen parent;
     private final PlayerBatchUiPreferences preferences;
     private PlayerBatchService.PlayerBatchSnapshot snapshot;
 
-    private Page activePage;
+    private WizardStep step;
     private EditBox countBox;
     private EditBox namesBox;
-    private EditBox headBox;
-    private EditBox chestBox;
-    private EditBox legsBox;
-    private EditBox feetBox;
-    private EditBox mainhandBox;
-    private EditBox offhandBox;
-    private EditBox hotbarBox;
-    private EditBox inventoryBox;
-    private EditBox effectIdBox;
-    private EditBox effectDurationBox;
-    private EditBox effectAmplifierBox;
-    private EditBox distributionOnePercentBox;
-    private EditBox distributionOneArmorBox;
-    private EditBox distributionOneWeaponBox;
-    private EditBox distributionTwoPercentBox;
-    private EditBox distributionTwoArmorBox;
-    private EditBox distributionTwoWeaponBox;
-    private EditBox distributionThreePercentBox;
-    private EditBox distributionThreeArmorBox;
-    private EditBox distributionThreeWeaponBox;
-    private Button summonButton;
-    private Button formationButton;
-    private SummonSummary summary = SummonSummary.empty();
 
     public PlayerBatchScreen(Screen parent) {
         super(Component.literal("PlayerBatch"));
         this.parent = parent;
         this.preferences = PlayerBatchUiPreferences.load();
         this.snapshot = PlayerBatchClient.latestSnapshot();
-        this.activePage = Page.fromPreference(preferences.activeTab());
+        this.step = WizardStep.fromPreference(preferences.summonPane());
     }
 
     @Override
     protected void init() {
         clearWidgets();
-        addPageButtons();
-        addFooterButtons();
-        switch (activePage) {
-            case BOT_SUMMONING -> initBotSummoningPage();
-            case ACTIONS -> initActionsPage();
-            case DEBUGGING -> initDebugPage();
+        int left = panelLeft();
+        int top = panelTop();
+        int bottom = panelBottom();
+
+        addRenderableWidget(Button.builder(Component.literal("Close"), button -> onClose())
+                .bounds(left, bottom - 24, 80, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(step == WizardStep.FORMATION ? "Summon Bots" : "Continue"), button -> advance())
+                .bounds(panelRight() - 110, bottom - 24, 100, 20).build());
+        if (step != WizardStep.BASICS) {
+            addRenderableWidget(Button.builder(Component.literal("Back"), button -> goBack())
+                    .bounds(panelRight() - 196, bottom - 24, 80, 20).build());
+        }
+
+        switch (step) {
+            case BASICS -> initBasicsStep(left, top);
+            case LOADOUT -> initLoadoutStep(left, top);
+            case ARGUMENTS -> initArgumentsStep(left, top);
+            case FORMATION -> initFormationStep(left, top);
         }
         requestState(false);
     }
 
-    private void addPageButtons() {
-        int left = panelLeft() + 18;
-        int top = panelTop() + 16;
-        int width = (panelWidth() - 52) / 3;
-        int gap = 8;
-        int index = 0;
-        for (Page page : Page.values()) {
-            int x = left + index * (width + gap);
-            addRenderableWidget(Button.builder(page.label(activePage == page), button -> switchPage(page))
-                    .bounds(x, top, width, 20).build());
-            index++;
-        }
+    private void initBasicsStep(int left, int top) {
+        countBox = addBox(left + 18, top + 78, 88, preferences.summonCount(), this::saveBasicsDraft);
+        namesBox = addBox(left + 120, top + 78, panelWidth() - 156, preferences.summonNames(), this::saveBasicsDraft);
+        namesBox.setMaxLength(32767);
+        countBox.setMaxLength(32767);
     }
 
-    private void addFooterButtons() {
-        int left = panelLeft() + 18;
-        int y = panelTop() + panelHeight() - 30;
-        addRenderableWidget(Button.builder(Component.literal("Close"), button -> onClose())
-                .bounds(left, y, 80, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Refresh"), button -> requestState(false))
-                .bounds(left + 88, y, 84, 20).build());
-    }
-
-    private void initBotSummoningPage() {
-        int left = panelLeft() + 18;
-        int top = panelTop() + 58;
-        int footerY = panelTop() + panelHeight() - 30;
-        int footerGap = 8;
-        int distributionRowHeight = 20;
-        int distributionRowSpacing = 14;
-        int distributionLabelGap = 12;
-        int countWidth = 76;
-        int namesLeft = left + 94;
-        int namesWidth = panelWidth() - 36 - countWidth - 18;
-        int equipmentWidth = (panelWidth() - 36 - 18 * 3) / 4;
-        int rightSmallWidth = 62;
-        int effectWidth = panelWidth() - 36 - ((equipmentWidth + 8) * 2) - ((rightSmallWidth + 8) * 2);
-        int fullRowWidth = panelWidth() - 36;
-        int distributionPercentWidth = 54;
-        int distributionArmorWidth = 160;
-        int distributionWeaponWidth = 160;
-        int distributionGroupTwoArmorWidth = fullRowWidth - (distributionPercentWidth + distributionArmorWidth + distributionWeaponWidth + distributionPercentWidth + (8 * 4));
-        int distributionRowTwoY = footerY - footerGap - distributionRowHeight;
-        int distributionRowOneY = distributionRowTwoY - distributionRowSpacing - distributionRowHeight;
-
-        countBox = addBox(left, top + 52, countWidth, preferences.summonCount(), this::refreshSummonState);
-        namesBox = addBox(namesLeft, top + 52, namesWidth, preferences.summonNames(), 32767, value -> {
-            autoGrowCount();
-            refreshSummonState(value);
-        });
-
-        headBox = addBox(left, top + 168, equipmentWidth, preferences.summonHead(), value -> saveDraft());
-        chestBox = addBox(left + equipmentWidth + 8, top + 168, equipmentWidth, preferences.summonChest(), value -> saveDraft());
-        legsBox = addBox(left + (equipmentWidth + 8) * 2, top + 168, equipmentWidth, preferences.summonLegs(), value -> saveDraft());
-        feetBox = addBox(left + (equipmentWidth + 8) * 3, top + 168, equipmentWidth, preferences.summonFeet(), value -> saveDraft());
-
-        mainhandBox = addBox(left, top + 216, equipmentWidth, preferences.summonMainhand(), value -> saveDraft());
-        offhandBox = addBox(left + equipmentWidth + 8, top + 216, equipmentWidth, preferences.summonOffhand(), value -> saveDraft());
-        effectIdBox = addBox(left + (equipmentWidth + 8) * 2, top + 216, effectWidth, preferences.summonEffectId(), value -> saveDraft());
-        effectDurationBox = addBox(left + (equipmentWidth + 8) * 2 + effectWidth + 8, top + 216, rightSmallWidth, preferences.summonEffectDuration(), value -> saveDraft());
-        effectAmplifierBox = addBox(left + (equipmentWidth + 8) * 2 + effectWidth + 8 + rightSmallWidth + 8, top + 216, rightSmallWidth, preferences.summonEffectAmplifier(), value -> saveDraft());
-
-        hotbarBox = addBox(left, top + 268, fullRowWidth, preferences.summonHotbar(), value -> saveDraft());
-        inventoryBox = addBox(left, top + 320, fullRowWidth, preferences.summonInventory(), value -> saveDraft());
-
-        distributionOnePercentBox = addBox(left, distributionRowOneY, distributionPercentWidth, preferences.distributionOnePercent(), value -> saveDraft());
-        distributionOneArmorBox = addBox(left + distributionPercentWidth + 8, distributionRowOneY, distributionArmorWidth, preferences.distributionOneArmor(), value -> saveDraft());
-        distributionOneWeaponBox = addBox(left + distributionPercentWidth + 8 + distributionArmorWidth + 8, distributionRowOneY, distributionWeaponWidth, preferences.distributionOneWeapon(), value -> saveDraft());
-        distributionTwoPercentBox = addBox(left + distributionPercentWidth + 8 + distributionArmorWidth + 8 + distributionWeaponWidth + 8, distributionRowOneY, distributionPercentWidth, preferences.distributionTwoPercent(), value -> saveDraft());
-        distributionTwoArmorBox = addBox(left + distributionPercentWidth + 8 + distributionArmorWidth + 8 + distributionWeaponWidth + 8 + distributionPercentWidth + 8, distributionRowOneY, distributionGroupTwoArmorWidth, preferences.distributionTwoArmor(), value -> saveDraft());
-
-        distributionTwoWeaponBox = addBox(left, distributionRowTwoY, distributionWeaponWidth, preferences.distributionTwoWeapon(), value -> saveDraft());
-        distributionThreePercentBox = addBox(left + distributionWeaponWidth + 8, distributionRowTwoY, distributionPercentWidth, preferences.distributionThreePercent(), value -> saveDraft());
-        distributionThreeArmorBox = addBox(left + distributionWeaponWidth + 8 + distributionPercentWidth + 8, distributionRowTwoY, distributionArmorWidth, preferences.distributionThreeArmor(), value -> saveDraft());
-        distributionThreeWeaponBox = addBox(left + distributionWeaponWidth + 8 + distributionPercentWidth + 8 + distributionArmorWidth + 8, distributionRowTwoY, fullRowWidth - (distributionWeaponWidth + distributionPercentWidth + distributionArmorWidth + (8 * 3)), preferences.distributionThreeWeapon(), value -> saveDraft());
-
-        formationButton = addRenderableWidget(Button.builder(Component.literal("Formation: " + preferences.summonFormation()), button -> {
-            saveDraft();
-            preferences.setSummonFormation(nextFormation(preferences.summonFormation()));
+    private void initLoadoutStep(int left, int top) {
+        int buttonWidth = 164;
+        int gap = 18;
+        addRenderableWidget(Button.builder(Component.literal("Armor: " + preferences.summonArmorMaterial()), button -> {
+            preferences.setSummonArmorMaterial(cycle(ARMOR_MATERIALS, preferences.summonArmorMaterial()));
             preferences.save();
             init();
-        }).bounds(panelLeft() + panelWidth() - 180, footerY, 120, 20).build());
-
-        summonButton = addRenderableWidget(Button.builder(Component.literal("Summon"), button -> summonBatch())
-                .bounds(panelLeft() + panelWidth() - 52, footerY, 44, 20).build());
-
-        refreshSummonState("");
+        }).bounds(left + 18, top + 86, buttonWidth, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Tools: " + preferences.summonToolMaterial()), button -> {
+            preferences.setSummonToolMaterial(cycle(TOOL_MATERIALS, preferences.summonToolMaterial()));
+            preferences.save();
+            init();
+        }).bounds(left + 18 + buttonWidth + gap, top + 86, buttonWidth, 20).build());
     }
 
-    private void initActionsPage() {
-        int left = panelLeft() + 18;
-        int top = panelTop() + 74;
-        addRenderableWidget(Button.builder(Component.literal("Open Bot Summoning"), button -> switchPage(Page.BOT_SUMMONING))
-                .bounds(left, top + 88, 140, 20).build());
+    private void initArgumentsStep(int left, int top) {
+        int buttonWidth = 168;
+        int rowGap = 14;
+        int columnGap = 18;
+        int rowOneY = top + 88;
+        int rowTwoY = rowOneY + 20 + rowGap;
+
+        addRenderableWidget(Button.builder(Component.literal("Reach: " + preferences.summonReach()), button -> {
+            preferences.setSummonReach(nextReach(preferences.summonReach()));
+            preferences.save();
+            init();
+        }).bounds(left + 18, rowOneY, buttonWidth, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(toggleLabel("Fake Hit", preferences.summonFakeHit())), button -> {
+            preferences.setSummonFakeHit(toggle(preferences.summonFakeHit()));
+            preferences.save();
+            init();
+        }).bounds(left + 18 + buttonWidth + columnGap, rowOneY, buttonWidth, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(toggleLabel("STAP", preferences.summonStap())), button -> {
+            preferences.setSummonStap(toggle(preferences.summonStap()));
+            preferences.save();
+            init();
+        }).bounds(left + 18, rowTwoY, buttonWidth, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(toggleLabel("Damage", preferences.summonDamage())), button -> {
+            preferences.setSummonDamage(toggle(preferences.summonDamage()));
+            preferences.save();
+            init();
+        }).bounds(left + 18 + buttonWidth + columnGap, rowTwoY, buttonWidth, 20).build());
+        addRenderableWidget(Button.builder(Component.literal(toggleLabel("360 Flex", preferences.summon360Flex())), button -> {
+            preferences.setSummon360Flex(toggle(preferences.summon360Flex()));
+            preferences.save();
+            init();
+        }).bounds(left + 18, rowTwoY + 20 + rowGap, buttonWidth, 20).build());
     }
 
-    private void initDebugPage() {
-        int left = panelLeft() + 18;
-        int top = panelTop() + 74;
-        addRenderableWidget(Button.builder(Component.literal("Open Bot Summoning"), button -> switchPage(Page.BOT_SUMMONING))
-                .bounds(left, top + 104, 140, 20).build());
+    private void initFormationStep(int left, int top) {
+        addRenderableWidget(Button.builder(Component.literal("Formation: " + preferences.summonFormation()), button -> {
+            preferences.setSummonFormation(cycle(FORMATIONS, preferences.summonFormation()));
+            preferences.save();
+            init();
+        }).bounds(left + 18, top + 88, 188, 20).build());
     }
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         guiGraphics.fillGradient(0, 0, width, height, 0xF0111418, 0xF01A2028);
+        guiGraphics.fill(panelLeft(), panelTop(), panelRight(), panelBottom(), 0xC0151D25);
+        guiGraphics.fill(panelLeft() + 10, panelTop() + 10, panelRight() - 10, panelBottom() - 10, 0xA01C2630);
 
-        int left = panelLeft();
-        int top = panelTop();
-        guiGraphics.fill(left, top, left + panelWidth(), top + panelHeight(), 0xC0151D25);
-        guiGraphics.fill(left + 10, top + 10, left + panelWidth() - 10, top + panelHeight() - 10, 0xA01C2630);
+        int left = panelLeft() + 18;
+        int top = panelTop() + 18;
 
-        guiGraphics.drawCenteredString(font, title, width / 2, top + 6, 0xFFFFFFFF);
-        switch (activePage) {
-            case BOT_SUMMONING -> renderBotSummoning(guiGraphics, left + 18, top + 58);
-            case ACTIONS -> renderActions(guiGraphics, left + 18, top + 74);
-            case DEBUGGING -> renderDebug(guiGraphics, left + 18, top + 74);
+        guiGraphics.drawString(font, "PlayerBatch Summon Wizard", left, top, 0xFFFFFFFF);
+        guiGraphics.drawString(font, "Step " + step.number + " of 4: " + step.title, left, top + 18, 0xFF9BE5B8);
+
+        switch (step) {
+            case BASICS -> renderBasics(guiGraphics, left, top + 48);
+            case LOADOUT -> renderLoadout(guiGraphics, left, top + 48);
+            case ARGUMENTS -> renderArguments(guiGraphics, left, top + 48);
+            case FORMATION -> renderFormation(guiGraphics, left, top + 48);
         }
 
+        renderStatus(guiGraphics, left, panelBottom() - 78);
         super.render(guiGraphics, mouseX, mouseY, partialTick);
     }
 
-    private void renderBotSummoning(GuiGraphics guiGraphics, int left, int top) {
-        int footerY = panelTop() + panelHeight() - 30;
-        int footerGap = 8;
-        int distributionRowHeight = 20;
-        int distributionRowSpacing = 14;
-        int distributionLabelGap = 12;
-        int distributionSectionGap = 14;
-        int introLineOneY = top + 14;
-        int introLineTwoY = top + 26;
-        int countLabelY = top + 38;
-        int nameLabelY = top + 38;
-        int previewTitleY = top + 88;
-        int previewLineOneY = top + 102;
-        int previewLineTwoY = top + 116;
-        int previewLineThreeY = top + 130;
-        int equipmentLabelY = top + 154;
-        int loadoutLabelY = top + 202;
-        int hotbarLabelY = top + 254;
-        int inventoryLabelY = top + 306;
-        int distributionRowTwoY = footerY - footerGap - distributionRowHeight;
-        int distributionRowTwoLabelY = distributionRowTwoY - distributionLabelGap;
-        int distributionRowOneY = distributionRowTwoY - distributionRowSpacing - distributionRowHeight;
-        int distributionRowOneLabelY = distributionRowOneY - distributionLabelGap;
-        int distributionTitleY = distributionRowOneLabelY - distributionSectionGap;
-
-        guiGraphics.drawString(font, "Page 1: Bot Summoning", left, top, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Usernames are fixed. Remaining bots stay random.", left, introLineOneY, 0xFFC3CED7);
-        guiGraphics.drawString(font, "Setup is still applied after spawn settles.", left, introLineTwoY, 0xFFC3CED7);
-
-        guiGraphics.drawString(font, "Count", left, countLabelY, 0xFF9BE5B8);
-        guiGraphics.drawString(font, "Custom usernames (comma-separated)", left + 94, nameLabelY, 0xFF9BE5B8);
-
-        guiGraphics.drawString(font, "Live preview", left, previewTitleY, 0xFF9BE5B8);
-        guiGraphics.drawString(font, "Custom: " + summary.customCount() + " | Random: " + summary.randomCount + " | Final: " + summary.finalCount, left, previewLineOneY, 0xFFFFFFFF);
-        guiGraphics.drawString(font, "Parsed names: " + summary.previewNames(), left, previewLineTwoY, 0xFFD9E4F1);
-        guiGraphics.drawString(font, summary.message, left, previewLineThreeY, summary.valid ? 0xFFBFD8E8 : 0xFFFF9696);
-
-        guiGraphics.drawString(font, "Helmet", left, equipmentLabelY, 0xFFEBDCA9);
-        int equipmentWidth = (panelWidth() - 36 - 18 * 3) / 4;
-        guiGraphics.drawString(font, "Chestplate", left + equipmentWidth + 8, equipmentLabelY, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Leggings", left + (equipmentWidth + 8) * 2, equipmentLabelY, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Boots", left + (equipmentWidth + 8) * 3, equipmentLabelY, 0xFFEBDCA9);
-
-        guiGraphics.drawString(font, "Main hand", left, loadoutLabelY, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Offhand", left + equipmentWidth + 8, loadoutLabelY, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Effect", left + (equipmentWidth + 8) * 2, loadoutLabelY, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Sec", left + panelWidth() - 36 - (62 * 2) - 8, loadoutLabelY, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Amp", left + panelWidth() - 36 - 62, loadoutLabelY, 0xFFEBDCA9);
-
-        guiGraphics.drawString(font, "Hotbar CSV 1-9", left, hotbarLabelY, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Example: diamond_sword, bow, bread*8", left + 110, hotbarLabelY, 0xFF8FB7D1);
-
-        guiGraphics.drawString(font, "Backpack CSV 10-36", left, inventoryLabelY, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Example: cobblestone*64, torch*32", left + 128, inventoryLabelY, 0xFF8FB7D1);
-
-        guiGraphics.drawString(font, "Distribution groups", left, distributionTitleY, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Group 1: % / armor / weapon", left, distributionRowOneLabelY, 0xFF8FB7D1);
-        guiGraphics.drawString(font, "Group 2: % / armor", left + panelWidth() - 36 - 54 - 82 - 8, distributionRowOneLabelY, 0xFF8FB7D1);
-        guiGraphics.drawString(font, "Group 2 weapon / Group 3: % / armor / weapon", left, distributionRowTwoLabelY, 0xFF8FB7D1);
+    private void renderBasics(GuiGraphics guiGraphics, int left, int top) {
+        guiGraphics.drawString(font, "Write how many bots you want and any fixed names you want to reserve.", left, top, 0xFFC3CED7);
+        guiGraphics.drawString(font, "Count", left, top + 18, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Names (comma-separated, no UI limit)", left + 102, top + 18, 0xFFEBDCA9);
+        guiGraphics.drawString(font, basicsSummary(), left, top + 56, 0xFFD9E4F1);
     }
 
-    private void renderActions(GuiGraphics guiGraphics, int left, int top) {
-        guiGraphics.drawString(font, "Page 2: Actions", left, top, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "This page is reserved for bot actions and command tools.", left, top + 18, 0xFFC3CED7);
-        guiGraphics.drawString(font, "Current selected bots: " + snapshot.selectedNames().size(), left, top + 36, 0xFFFFFFFF);
-        guiGraphics.drawString(font, "Summoning is now handled entirely on page 1.", left, top + 52, 0xFFD9E4F1);
+    private void renderLoadout(GuiGraphics guiGraphics, int left, int top) {
+        guiGraphics.drawString(font, "Pick a simple default armor tier and tool tier for the batch.", left, top, 0xFFC3CED7);
+        guiGraphics.drawString(font, "Armor Level", left, top + 18, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Tools", left + 182, top + 18, 0xFFEBDCA9);
+        guiGraphics.drawString(font, "Selected armor: " + pretty(preferences.summonArmorMaterial()), left, top + 58, 0xFFD9E4F1);
+        guiGraphics.drawString(font, "Selected tools: " + pretty(preferences.summonToolMaterial()), left, top + 74, 0xFFD9E4F1);
     }
 
-    private void renderDebug(GuiGraphics guiGraphics, int left, int top) {
-        guiGraphics.drawString(font, "Page 3: Debugging", left, top, 0xFFEBDCA9);
-        guiGraphics.drawString(font, "Batch active: " + snapshot.batchActive(), left, top + 18, 0xFFFFFFFF);
-        guiGraphics.drawString(font, "Queued batches: " + snapshot.queuedBatches(), left, top + 34, 0xFFFFFFFF);
-        guiGraphics.drawString(font, "Progress: " + snapshot.successCount() + "/" + snapshot.totalCount()
-                + " success, " + snapshot.failCount() + " failed, " + snapshot.pendingCount() + " pending", left, top + 50, 0xFFD9E4F1);
-        guiGraphics.drawString(font, "Debug tools stay here. Summon controls stay on page 1.", left, top + 68, 0xFFC3CED7);
+    private void renderArguments(GuiGraphics guiGraphics, int left, int top) {
+        guiGraphics.drawString(font, "Toggle the combat-style arguments you want on the summoned bots.", left, top, 0xFFC3CED7);
+        guiGraphics.drawString(font, "Everything here feeds the backend preset logic, not fake GUI-only state.", left, top + 14, 0xFF8FB7D1);
+    }
+
+    private void renderFormation(GuiGraphics guiGraphics, int left, int top) {
+        guiGraphics.drawString(font, "Pick the spawn formation, then click Summon Bots.", left, top, 0xFFC3CED7);
+        guiGraphics.drawString(font, "Formation", left, top + 18, 0xFFEBDCA9);
+        guiGraphics.drawString(font, finalSummary(), left, top + 56, 0xFFD9E4F1);
+    }
+
+    private void renderStatus(GuiGraphics guiGraphics, int left, int y) {
+        guiGraphics.drawString(font,
+                "Batch: " + (snapshot.batchActive() ? "Active" : "Idle")
+                        + " | Queued: " + snapshot.queuedBatches()
+                        + " | Selected: " + snapshot.selectedNames().size(),
+                left,
+                y,
+                0xFFEBDCA9);
+        guiGraphics.drawString(font,
+                "Progress: " + snapshot.successCount() + "/" + snapshot.totalCount()
+                        + " success, " + snapshot.failCount() + " failed, " + snapshot.pendingCount() + " pending",
+                left,
+                y + 14,
+                0xFFC3CED7);
     }
 
     private EditBox addBox(int x, int y, int width, String value, java.util.function.Consumer<String> responder) {
         EditBox box = addRenderableWidget(new EditBox(font, x, y, width, 20, Component.empty()));
-        box.setMaxLength(32767);
         box.setValue(value == null ? "" : value);
         box.setResponder(responder);
         return box;
     }
 
-    private EditBox addBox(int x, int y, int width, String value, int maxLength, java.util.function.Consumer<String> responder) {
-        EditBox box = addBox(x, y, width, value, responder);
-        box.setMaxLength(maxLength);
-        return box;
-    }
-
-    private void refreshSummonState(String ignored) {
-        autoGrowCount();
+    private void advance() {
         saveDraft();
-        summary = buildSummary();
-        if (summonButton != null) {
-            summonButton.active = summary.valid;
-        }
-    }
-
-    private SummonSummary buildSummary() {
-        List<String> names = new ArrayList<>();
-        Set<String> seen = new LinkedHashSet<>();
-        String duplicate = null;
-        String invalid = null;
-
-        String rawNames = namesBox == null ? preferences.summonNames() : namesBox.getValue();
-        for (String piece : rawNames.split(",")) {
-            String candidate = piece.trim();
-            if (candidate.isEmpty()) {
-                continue;
-            }
-            if (!candidate.matches("[A-Za-z0-9_]{3,16}")) {
-                invalid = candidate;
-                break;
-            }
-            String lowered = candidate.toLowerCase(Locale.ROOT);
-            if (!seen.add(lowered)) {
-                duplicate = candidate;
-                break;
-            }
-            names.add(candidate);
-        }
-
-        int finalCount = Math.max(parseInt(value(countBox, preferences.summonCount()), 1), names.size());
-        int randomCount = Math.max(0, finalCount - names.size());
-        String message = "Ready to summon " + finalCount + " bots in " + preferences.summonFormation() + " formation.";
-        boolean valid = true;
-
-        if (duplicate != null) {
-            valid = false;
-            message = "Duplicate username: " + duplicate;
-        } else if (invalid != null) {
-            valid = false;
-            message = "Invalid username: " + invalid + " (3-16 letters, numbers, or _)";
-        } else if (!distributionLooksValid()) {
-            valid = false;
-            message = "Distribution groups must total 100% or less.";
-        }
-
-        return new SummonSummary(names, finalCount, randomCount, valid, message);
-    }
-
-    private boolean distributionLooksValid() {
-        int total = parseInt(value(distributionOnePercentBox, preferences.distributionOnePercent()), 0)
-                + parseInt(value(distributionTwoPercentBox, preferences.distributionTwoPercent()), 0)
-                + parseInt(value(distributionThreePercentBox, preferences.distributionThreePercent()), 0);
-        return total <= 100;
-    }
-
-    private void summonBatch() {
-        refreshSummonState("");
-        if (!summary.valid) {
+        if (step == WizardStep.FORMATION) {
+            summonBatch();
             return;
         }
-        BotConfig config = buildSummonConfig();
-        send(new PlayerBatchNetworking.PlayerBatchActionPayload(
-                PlayerBatchNetworking.ActionKind.SUMMON,
-                String.join(", ", summary.names),
-                config.encode(),
-                summary.finalCount,
-                false
-        ));
-    }
-
-    private BotConfig buildSummonConfig() {
-        BotLoadout baseLoadout = new BotLoadout();
-        putEquipment(baseLoadout, EquipmentSlot.HEAD, value(headBox, preferences.summonHead()));
-        putEquipment(baseLoadout, EquipmentSlot.CHEST, value(chestBox, preferences.summonChest()));
-        putEquipment(baseLoadout, EquipmentSlot.LEGS, value(legsBox, preferences.summonLegs()));
-        putEquipment(baseLoadout, EquipmentSlot.FEET, value(feetBox, preferences.summonFeet()));
-        putEquipment(baseLoadout, EquipmentSlot.MAINHAND, value(mainhandBox, preferences.summonMainhand()));
-        putEquipment(baseLoadout, EquipmentSlot.OFFHAND, value(offhandBox, preferences.summonOffhand()));
-        applyInventoryCsv(baseLoadout.hotbar(), value(hotbarBox, preferences.summonHotbar()), 0);
-        applyInventoryCsv(baseLoadout.inventory(), value(inventoryBox, preferences.summonInventory()), 9);
-        addEffect(baseLoadout, value(effectIdBox, preferences.summonEffectId()), value(effectDurationBox, preferences.summonEffectDuration()), value(effectAmplifierBox, preferences.summonEffectAmplifier()));
-
-        List<BotConfig.DistributionRule> distributions = new ArrayList<>();
-        addDistribution(distributions, value(distributionOnePercentBox, preferences.distributionOnePercent()), value(distributionOneArmorBox, preferences.distributionOneArmor()), value(distributionOneWeaponBox, preferences.distributionOneWeapon()));
-        addDistribution(distributions, value(distributionTwoPercentBox, preferences.distributionTwoPercent()), value(distributionTwoArmorBox, preferences.distributionTwoArmor()), value(distributionTwoWeaponBox, preferences.distributionTwoWeapon()));
-        addDistribution(distributions, value(distributionThreePercentBox, preferences.distributionThreePercent()), value(distributionThreeArmorBox, preferences.distributionThreeArmor()), value(distributionThreeWeaponBox, preferences.distributionThreeWeapon()));
-
-        return new BotConfig(preferences.summonFormation(), baseLoadout, distributions);
-    }
-
-    private void addDistribution(List<BotConfig.DistributionRule> distributions, String percentRaw, String armorRaw, String weaponRaw) {
-        int percent = parseInt(percentRaw, 0);
-        BotLoadout loadout = armorLoadout(armorRaw);
-        if (!weaponRaw.isBlank()) {
-            loadout.equipment().put(EquipmentSlot.MAINHAND, new BotLoadout.StackSpec(normalizeItemId(weaponRaw), 1));
-        }
-        if (percent > 0 && !loadout.isEmpty()) {
-            distributions.add(new BotConfig.DistributionRule(percent, loadout));
-        }
-    }
-
-    private BotLoadout armorLoadout(String armorRaw) {
-        BotLoadout loadout = new BotLoadout();
-        String armor = armorRaw == null ? "" : armorRaw.trim().toLowerCase(Locale.ROOT);
-        if (armor.isEmpty()) {
-            return loadout;
-        }
-        if (List.of("leather", "chainmail", "iron", "golden", "diamond", "netherite").contains(armor)) {
-            loadout.equipment().put(EquipmentSlot.HEAD, new BotLoadout.StackSpec("minecraft:" + armor + "_helmet", 1));
-            loadout.equipment().put(EquipmentSlot.CHEST, new BotLoadout.StackSpec("minecraft:" + armor + "_chestplate", 1));
-            loadout.equipment().put(EquipmentSlot.LEGS, new BotLoadout.StackSpec("minecraft:" + armor + "_leggings", 1));
-            loadout.equipment().put(EquipmentSlot.FEET, new BotLoadout.StackSpec("minecraft:" + armor + "_boots", 1));
-        }
-        return loadout;
-    }
-
-    private void addEffect(BotLoadout loadout, String effectId, String durationRaw, String ampRaw) {
-        if (effectId.isBlank()) {
-            return;
-        }
-        loadout.effects().add(new BotLoadout.EffectSpec(
-                normalizeEffectId(effectId),
-                Math.max(1, parseInt(durationRaw, 30)),
-                Math.max(0, parseInt(ampRaw, 0))
-        ));
-    }
-
-    private void applyInventoryCsv(java.util.Map<Integer, BotLoadout.StackSpec> target, String raw, int startSlot) {
-        if (raw == null || raw.isBlank()) {
-            return;
-        }
-        String[] parts = raw.split(",");
-        for (int index = 0; index < parts.length; index++) {
-            String token = parts[index].trim();
-            if (token.isEmpty()) {
-                continue;
-            }
-            int count = 1;
-            String itemId = token;
-            if (token.contains("*")) {
-                String[] split = token.split("\\*", 2);
-                itemId = split[0].trim();
-                count = parseInt(split[1], 1);
-            }
-            target.put(startSlot + index, new BotLoadout.StackSpec(normalizeItemId(itemId), Math.max(1, count)));
-        }
-    }
-
-    private void putEquipment(BotLoadout loadout, EquipmentSlot slot, String rawItem) {
-        if (rawItem.isBlank()) {
-            return;
-        }
-        loadout.equipment().put(slot, new BotLoadout.StackSpec(normalizeItemId(rawItem), 1));
-    }
-
-    private void autoGrowCount() {
-        if (countBox == null || namesBox == null) {
-            return;
-        }
-        int parsed = parseInt(countBox.getValue(), 1);
-        int names = countNames(namesBox.getValue());
-        if (names > parsed) {
-            countBox.setValue(Integer.toString(names));
-        }
-    }
-
-    private int countNames(String raw) {
-        int count = 0;
-        for (String piece : raw.split(",")) {
-            if (!piece.trim().isEmpty()) {
-                count++;
-            }
-        }
-        return count;
-    }
-
-    private void switchPage(Page page) {
-        saveDraft();
-        activePage = page;
-        preferences.setActiveTab(page.preferenceValue);
+        step = WizardStep.values()[step.ordinal() + 1];
+        preferences.setSummonPane(step.preferenceValue);
         preferences.save();
         init();
     }
 
-    @Override
-    public void onClose() {
+    private void goBack() {
         saveDraft();
-        send(new PlayerBatchNetworking.PlayerBatchActionPayload(PlayerBatchNetworking.ActionKind.CLOSE_SCREEN, "", "", 0, false));
-        Minecraft.getInstance().setScreen(parent);
+        if (step.ordinal() > 0) {
+            step = WizardStep.values()[step.ordinal() - 1];
+            preferences.setSummonPane(step.preferenceValue);
+            preferences.save();
+            init();
+        }
     }
 
-    public void applySnapshot(PlayerBatchService.PlayerBatchSnapshot snapshot) {
-        this.snapshot = snapshot;
+    private void summonBatch() {
+        saveDraft();
+        int count = Math.max(parseInt(preferences.summonCount(), 1), countNames(preferences.summonNames()));
+        BotConfig config = buildWizardConfig();
+        send(new PlayerBatchNetworking.PlayerBatchActionPayload(
+                PlayerBatchNetworking.ActionKind.SUMMON,
+                preferences.summonNames(),
+                config.encode(),
+                count,
+                false
+        ));
+    }
+
+    private BotConfig buildWizardConfig() {
+        BotLoadout loadout = new BotLoadout();
+        applyArmorLoadout(loadout, preferences.summonArmorMaterial());
+        applyToolLoadout(loadout, preferences.summonToolMaterial());
+        CombatPresetSpec combatPreset = new CombatPresetSpec(
+                CombatPresetSpec.ArmorTier.NONE,
+                CombatPresetSpec.ToolTier.NONE,
+                CombatPresetSpec.OffhandMode.SHIELD,
+                1,
+                false,
+                false,
+                List.of(),
+                parseInt(preferences.summonReach(), 3),
+                parseBoolean(preferences.summonFakeHit(), true),
+                parseBoolean(preferences.summonStap(), false),
+                parseBoolean(preferences.summonDamage(), true),
+                parseBoolean(preferences.summon360Flex(), false)
+        );
+        return new BotConfig(preferences.summonFormation(), loadout, combatPreset);
+    }
+
+    private void applyArmorLoadout(BotLoadout loadout, String material) {
+        String normalized = normalize(material);
+        if ("none".equals(normalized)) {
+            return;
+        }
+        loadout.equipment().put(EquipmentSlot.HEAD, new BotLoadout.StackSpec("minecraft:" + normalized + "_helmet", 1));
+        loadout.equipment().put(EquipmentSlot.CHEST, new BotLoadout.StackSpec("minecraft:" + normalized + "_chestplate", 1));
+        loadout.equipment().put(EquipmentSlot.LEGS, new BotLoadout.StackSpec("minecraft:" + normalized + "_leggings", 1));
+        loadout.equipment().put(EquipmentSlot.FEET, new BotLoadout.StackSpec("minecraft:" + normalized + "_boots", 1));
+    }
+
+    private void applyToolLoadout(BotLoadout loadout, String material) {
+        String normalized = normalize(material);
+        if ("none".equals(normalized)) {
+            return;
+        }
+        loadout.equipment().put(EquipmentSlot.MAINHAND, new BotLoadout.StackSpec("minecraft:" + normalized + "_sword", 1));
+        loadout.hotbar().put(1, new BotLoadout.StackSpec("minecraft:" + normalized + "_axe", 1));
+    }
+
+    private void saveBasicsDraft(String ignored) {
+        saveDraft();
     }
 
     private void saveDraft() {
-        preferences.setActiveTab(activePage.preferenceValue);
-        preferences.setSummonCount(value(countBox, preferences.summonCount()));
-        preferences.setSummonNames(value(namesBox, preferences.summonNames()));
-        preferences.setSummonHead(value(headBox, preferences.summonHead()));
-        preferences.setSummonChest(value(chestBox, preferences.summonChest()));
-        preferences.setSummonLegs(value(legsBox, preferences.summonLegs()));
-        preferences.setSummonFeet(value(feetBox, preferences.summonFeet()));
-        preferences.setSummonMainhand(value(mainhandBox, preferences.summonMainhand()));
-        preferences.setSummonOffhand(value(offhandBox, preferences.summonOffhand()));
-        preferences.setSummonHotbar(value(hotbarBox, preferences.summonHotbar()));
-        preferences.setSummonInventory(value(inventoryBox, preferences.summonInventory()));
-        preferences.setSummonEffectId(value(effectIdBox, preferences.summonEffectId()));
-        preferences.setSummonEffectDuration(value(effectDurationBox, preferences.summonEffectDuration()));
-        preferences.setSummonEffectAmplifier(value(effectAmplifierBox, preferences.summonEffectAmplifier()));
-        preferences.setDistributionOnePercent(value(distributionOnePercentBox, preferences.distributionOnePercent()));
-        preferences.setDistributionOneArmor(value(distributionOneArmorBox, preferences.distributionOneArmor()));
-        preferences.setDistributionOneWeapon(value(distributionOneWeaponBox, preferences.distributionOneWeapon()));
-        preferences.setDistributionTwoPercent(value(distributionTwoPercentBox, preferences.distributionTwoPercent()));
-        preferences.setDistributionTwoArmor(value(distributionTwoArmorBox, preferences.distributionTwoArmor()));
-        preferences.setDistributionTwoWeapon(value(distributionTwoWeaponBox, preferences.distributionTwoWeapon()));
-        preferences.setDistributionThreePercent(value(distributionThreePercentBox, preferences.distributionThreePercent()));
-        preferences.setDistributionThreeArmor(value(distributionThreeArmorBox, preferences.distributionThreeArmor()));
-        preferences.setDistributionThreeWeapon(value(distributionThreeWeaponBox, preferences.distributionThreeWeapon()));
+        preferences.setSummonPane(step.preferenceValue);
+        if (countBox != null) {
+            preferences.setSummonCount(countBox.getValue().trim());
+        }
+        if (namesBox != null) {
+            preferences.setSummonNames(namesBox.getValue().trim());
+        }
         preferences.save();
     }
 
-    private String value(EditBox box, String fallback) {
-        return box == null ? fallback : box.getValue().trim();
+    private String basicsSummary() {
+        int customNames = countNames(preferences.summonNames());
+        int finalCount = Math.max(parseInt(preferences.summonCount(), 1), customNames);
+        return "Custom names: " + customNames + " | Final bot count: " + finalCount;
+    }
+
+    private String finalSummary() {
+        int customNames = countNames(preferences.summonNames());
+        int finalCount = Math.max(parseInt(preferences.summonCount(), 1), customNames);
+        return "Ready to summon " + finalCount
+                + " bots with "
+                + pretty(preferences.summonArmorMaterial()) + " armor, "
+                + pretty(preferences.summonToolMaterial()) + " tools, "
+                + preferences.summonFormation() + " formation.";
+    }
+
+    private int countNames(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return 0;
+        }
+        int count = 0;
+        for (String part : raw.split(",")) {
+            if (!part.trim().isEmpty()) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private int parseInt(String raw, int fallback) {
@@ -528,25 +329,50 @@ public final class PlayerBatchScreen extends Screen {
         }
     }
 
-    private String normalizeItemId(String raw) {
-        String trimmed = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
-        if (trimmed.isEmpty()) {
-            return "";
+    private boolean parseBoolean(String raw, boolean fallback) {
+        if (raw == null || raw.isBlank()) {
+            return fallback;
         }
-        return trimmed.contains(":") ? trimmed : "minecraft:" + trimmed;
+        return Boolean.parseBoolean(raw);
     }
 
-    private String normalizeEffectId(String raw) {
-        return normalizeItemId(raw);
+    private String toggle(String current) {
+        return Boolean.toString(!parseBoolean(current, false));
     }
 
-    private String nextFormation(String current) {
-        for (int index = 0; index < FORMATIONS.size(); index++) {
-            if (FORMATIONS.get(index).equalsIgnoreCase(current)) {
-                return FORMATIONS.get((index + 1) % FORMATIONS.size());
+    private String nextReach(String current) {
+        int reach = parseInt(current, 3);
+        reach++;
+        if (reach > 10) {
+            reach = 1;
+        }
+        return Integer.toString(reach);
+    }
+
+    private String cycle(List<String> values, String current) {
+        String normalized = normalize(current);
+        for (int index = 0; index < values.size(); index++) {
+            if (values.get(index).equalsIgnoreCase(normalized)) {
+                return values.get((index + 1) % values.size());
             }
         }
-        return FORMATIONS.get(0);
+        return values.getFirst();
+    }
+
+    private String toggleLabel(String label, String value) {
+        return label + ": " + (parseBoolean(value, false) ? "ON" : "OFF");
+    }
+
+    private String pretty(String raw) {
+        String normalized = normalize(raw);
+        if (normalized.isEmpty()) {
+            return "None";
+        }
+        return normalized.substring(0, 1).toUpperCase(Locale.ROOT) + normalized.substring(1);
+    }
+
+    private String normalize(String raw) {
+        return raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
     }
 
     private void requestState(boolean openScreen) {
@@ -565,66 +391,60 @@ public final class PlayerBatchScreen extends Screen {
         }
     }
 
+    public void applySnapshot(PlayerBatchService.PlayerBatchSnapshot snapshot) {
+        this.snapshot = snapshot;
+    }
+
+    @Override
+    public void onClose() {
+        saveDraft();
+        send(new PlayerBatchNetworking.PlayerBatchActionPayload(PlayerBatchNetworking.ActionKind.CLOSE_SCREEN, "", "", 0, false));
+        Minecraft.getInstance().setScreen(parent);
+    }
+
     private int panelLeft() {
-        return PANEL_MARGIN;
+        return 14;
     }
 
     private int panelTop() {
-        return PANEL_MARGIN;
+        return 14;
+    }
+
+    private int panelRight() {
+        return width - 14;
+    }
+
+    private int panelBottom() {
+        return height - 14;
     }
 
     private int panelWidth() {
-        return width - (PANEL_MARGIN * 2);
+        return panelRight() - panelLeft();
     }
 
-    private int panelHeight() {
-        return height - (PANEL_MARGIN * 2);
-    }
-
-    private enum Page {
-        BOT_SUMMONING("BOT_SUMMONING", "Bot Summoning"),
-        ACTIONS("ACTIONS", "Actions"),
-        DEBUGGING("DEBUGGING", "Debugging");
+    private enum WizardStep {
+        BASICS("BASICS", 1, "Bot Count & Names"),
+        LOADOUT("LOADOUT", 2, "Armor & Tools"),
+        ARGUMENTS("ARGUMENTS", 3, "Arguments"),
+        FORMATION("FORMATION", 4, "Formation & Summon");
 
         private final String preferenceValue;
-        private final String label;
+        private final int number;
+        private final String title;
 
-        Page(String preferenceValue, String label) {
+        WizardStep(String preferenceValue, int number, String title) {
             this.preferenceValue = preferenceValue;
-            this.label = label;
+            this.number = number;
+            this.title = title;
         }
 
-        private static Page fromPreference(String raw) {
-            for (Page page : values()) {
-                if (page.preferenceValue.equalsIgnoreCase(raw)) {
-                    return page;
+        private static WizardStep fromPreference(String raw) {
+            for (WizardStep value : values()) {
+                if (value.preferenceValue.equalsIgnoreCase(raw)) {
+                    return value;
                 }
             }
-            return BOT_SUMMONING;
-        }
-
-        private Component label(boolean active) {
-            return Component.literal((active ? "> " : "") + label);
-        }
-    }
-
-    private record SummonSummary(List<String> names, int finalCount, int randomCount, boolean valid, String message) {
-        private static SummonSummary empty() {
-            return new SummonSummary(List.of(), 1, 1, true, "Ready.");
-        }
-
-        private int customCount() {
-            return names.size();
-        }
-
-        private String previewNames() {
-            if (names.isEmpty()) {
-                return "No custom names yet.";
-            }
-            if (names.size() <= 6) {
-                return String.join(", ", names);
-            }
-            return String.join(", ", names.subList(0, 6)) + " ...";
+            return BASICS;
         }
     }
 }

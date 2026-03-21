@@ -85,6 +85,14 @@ public final class BotConfig {
             properties.setProperty("distribution." + index + ".percent", Integer.toString(rule.percent()));
             rule.loadout().writeTo(properties, "distribution." + index + ".");
         }
+        if (combatPreset != null) {
+            properties.setProperty("combatPreset.enabled", "true");
+            properties.setProperty("combatPreset.reach", Integer.toString(combatPreset.reach()));
+            properties.setProperty("combatPreset.fakeHitEnabled", Boolean.toString(combatPreset.fakeHitEnabled()));
+            properties.setProperty("combatPreset.stapEnabled", Boolean.toString(combatPreset.stapEnabled()));
+            properties.setProperty("combatPreset.damageEnabled", Boolean.toString(combatPreset.damageEnabled()));
+            properties.setProperty("combatPreset.flex360Enabled", Boolean.toString(combatPreset.flex360Enabled()));
+        }
         try (StringWriter writer = new StringWriter()) {
             properties.store(writer, "PlayerBatch summon config");
             return writer.toString();
@@ -149,7 +157,24 @@ public final class BotConfig {
                 distributions.add(new DistributionRule(percent, distributionLoadout));
             }
         }
-        return new BotConfig(properties.getProperty("formation", "circle"), loadout, distributions);
+        CombatPresetSpec combatPreset = null;
+        if (Boolean.parseBoolean(properties.getProperty("combatPreset.enabled", "false"))) {
+            combatPreset = new CombatPresetSpec(
+                    CombatPresetSpec.ArmorTier.NONE,
+                    CombatPresetSpec.ToolTier.NONE,
+                    CombatPresetSpec.OffhandMode.SHIELD,
+                    1,
+                    false,
+                    false,
+                    List.of(),
+                    parseInt(properties.getProperty("combatPreset.reach"), 3),
+                    Boolean.parseBoolean(properties.getProperty("combatPreset.fakeHitEnabled", "true")),
+                    Boolean.parseBoolean(properties.getProperty("combatPreset.stapEnabled", "false")),
+                    Boolean.parseBoolean(properties.getProperty("combatPreset.damageEnabled", "true")),
+                    Boolean.parseBoolean(properties.getProperty("combatPreset.flex360Enabled", "false"))
+            );
+        }
+        return new BotConfig(properties.getProperty("formation", "circle"), loadout, distributions, combatPreset);
     }
 
     private static void readSlot(Properties properties, String key, EquipmentSlot slot, BotLoadout loadout) {
