@@ -103,6 +103,9 @@ public final class PlayerBatchScreen extends Screen {
         }).bounds(left + 18, rowOneY, buttonWidth, 20).build());
         addRenderableWidget(Button.builder(Component.literal(toggleLabel("Fake Hit", preferences.summonFakeHit())), button -> {
             preferences.setSummonFakeHit(toggle(preferences.summonFakeHit()));
+            if (!parseBoolean(preferences.summonFakeHit(), false)) {
+                preferences.setSummonDamage("false");
+            }
             preferences.save();
             init();
         }).bounds(left + 18 + buttonWidth + columnGap, rowOneY, buttonWidth, 20).build());
@@ -113,6 +116,9 @@ public final class PlayerBatchScreen extends Screen {
         }).bounds(left + 18, rowTwoY, buttonWidth, 20).build());
         addRenderableWidget(Button.builder(Component.literal(toggleLabel("Damage", preferences.summonDamage())), button -> {
             preferences.setSummonDamage(toggle(preferences.summonDamage()));
+            if (parseBoolean(preferences.summonDamage(), false)) {
+                preferences.setSummonFakeHit("true");
+            }
             preferences.save();
             init();
         }).bounds(left + 18 + buttonWidth + columnGap, rowTwoY, buttonWidth, 20).build());
@@ -189,6 +195,7 @@ public final class PlayerBatchScreen extends Screen {
         guiGraphics.drawString(font, "Toggle the combat-style arguments you want on the summoned bots.", left, top, 0xFFC3CED7);
         guiGraphics.drawString(font, "Everything here feeds the backend preset logic, not fake GUI-only state.", left, top + 14, 0xFF8FB7D1);
         guiGraphics.drawString(font, "Reach / fake hit / STAP / damage / 360 flex / self heal / healing items", left, top + 38, 0xFFD9E4F1);
+        guiGraphics.drawString(font, "If Damage is ON, Fake Hit is forced ON so bots can actually hurt players.", left, top + 52, 0xFFEBDCA9);
     }
 
     private void renderFormation(GuiGraphics guiGraphics, int left, int top) {
