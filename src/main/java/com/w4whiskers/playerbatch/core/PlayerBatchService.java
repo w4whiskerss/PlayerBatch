@@ -1396,6 +1396,7 @@ public final class PlayerBatchService {
             brain.flexSpinProgress = 0.0F;
             brain.stuckTicks = 0;
             brain.terrainActionCooldownTicks = 0;
+            resetBreakProgress(fakePlayer, brain);
             brain.scriptedUse = null;
             stopActionMovement(fakePlayer, true);
             if (combatPreset != null) {
@@ -1796,6 +1797,15 @@ public final class PlayerBatchService {
             return false;
         }
 
+        private void resetBreakProgress(EntityPlayerMPFake source, BotBrain brain) {
+            if (brain.breakingBlockPos != null) {
+                ((ServerLevel) source.level()).destroyBlockProgress(source.getId(), brain.breakingBlockPos, -1);
+                brain.breakingBlockPos = null;
+                brain.breakingTicks = 0;
+                brain.breakingRequiredTicks = 0;
+            }
+        }
+
         private Direction horizontalDirectionToward(EntityPlayerMPFake source, Entity target) {
             Vec3 delta = target.position().subtract(source.position());
             if (Math.abs(delta.x) < 0.001D && Math.abs(delta.z) < 0.001D) {
@@ -1810,15 +1820,37 @@ public final class PlayerBatchService {
             ServerLevel level = (ServerLevel) source.level();
             BlockState state = level.getBlockState(pos);
             if (!canBreakCombatBlock(level, pos, state)) {
+                resetBreakProgress(source, brain);
                 return false;
             }
+
+            if (!pos.equals(brain.breakingBlockPos)) {
+                resetBreakProgress(source, brain);
+                brain.breakingBlockPos = pos.immutable();
+                brain.breakingTicks = 0;
+                brain.breakingRequiredTicks = requiredBreakTicks(level, pos, state);
+                tracePathing(source, brain, null, "terrain-break", "start " + reason + " -> " + BuiltInRegistries.BLOCK.getKey(state.getBlock()));
+            }
+
+            brain.breakingTicks++;
+            int stage = Math.min(9, Math.max(0, (int) Math.floor((brain.breakingTicks * 10.0D) / Math.max(1, brain.breakingRequiredTicks))));
+            level.destroyBlockProgress(source.getId(), pos, stage);
+            stopActionMovement(source, false);
+
+            if (brain.breakingTicks < brain.breakingRequiredTicks) {
+                tracePathing(source, brain, null, "terrain-break", "progress " + brain.breakingTicks + "/" + brain.breakingRequiredTicks + " " + reason);
+                return true;
+            }
+
             boolean broken = level.destroyBlock(pos, true, source);
+            level.destroyBlockProgress(source.getId(), pos, -1);
+            resetBreakProgress(source, brain);
             if (!broken) {
                 return false;
             }
+
             brain.terrainActionCooldownTicks = 6;
-            stopActionMovement(source, false);
-            tracePathing(source, brain, null, "terrain-break", reason + " -> " + BuiltInRegistries.BLOCK.getKey(state.getBlock()));
+            tracePathing(source, brain, null, "terrain-break", "finish " + reason + " -> " + BuiltInRegistries.BLOCK.getKey(state.getBlock()));
             debug("{} broke {} at {} to {}", source.getGameProfile().name(), BuiltInRegistries.BLOCK.getKey(state.getBlock()), pos, reason);
             return true;
         }
@@ -1849,6 +1881,7 @@ public final class PlayerBatchService {
                 return false;
             }
 
+            resetBreakProgress(source, brain);
             blockStack.shrink(1);
             if (blockStack.isEmpty()) {
                 source.getInventory().setItem(slot, ItemStack.EMPTY);
@@ -1880,6 +1913,14 @@ public final class PlayerBatchService {
                 return false;
             }
             return state.blocksMotion();
+        }
+
+        private int requiredBreakTicks(ServerLevel level, BlockPos pos, BlockState state) {
+            float hardness = state.getDestroySpeed(level, pos);
+            if (hardness <= 0.0F) {
+                return 6;
+            }
+            return Math.max(6, Math.min(40, Math.round(hardness * 10.0F)));
         }
 
         private boolean isBlockingObstacle(BlockState state) {
@@ -3362,6 +3403,9 @@ public final class PlayerBatchService {
         private int unstuckStrafeTicks;
         private float unstuckStrafeDirection = 1.0F;
         private int terrainActionCooldownTicks;
+        private BlockPos breakingBlockPos;
+        private int breakingTicks;
+        private int breakingRequiredTicks;
         private int pathDebugCooldownTicks;
         private Vec3 lastTrackedPosition;
         private String lastPathDebugMessage;
