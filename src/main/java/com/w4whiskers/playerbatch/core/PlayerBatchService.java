@@ -1577,16 +1577,18 @@ public final class PlayerBatchService {
                         return;
                     }
                     if (desiredPickup != null && isHealingPickup(desiredPickup.getItem())) {
+                        tracePathing(fakePlayer, brain, desiredPickup, "pickup-heal", "move");
                         prepareInventorySpaceFor(fakePlayer, desiredPickup.getItem(), combatPreset);
                         lookAtTarget(fakePlayer, desiredPickup);
-                        moveTowardTarget(fakePlayer, desiredPickup, 1.0D, 0.95F, false, brain, false);
+                        moveTowardTarget(fakePlayer, desiredPickup, 0.2D, 0.95F, false, brain, true);
                         return;
                     }
                 }
                 if (desiredPickup != null) {
+                    tracePathing(fakePlayer, brain, desiredPickup, "pickup-upgrade", "move");
                     prepareInventorySpaceFor(fakePlayer, desiredPickup.getItem(), combatPreset);
                     lookAtTarget(fakePlayer, desiredPickup);
-                    moveTowardTarget(fakePlayer, desiredPickup, 1.0D, 0.95F, false, brain, false);
+                    moveTowardTarget(fakePlayer, desiredPickup, 0.2D, 0.95F, false, brain, true);
                     return;
                 }
             }
@@ -1604,6 +1606,7 @@ public final class PlayerBatchService {
 
             if (modes.contains(BotAiMode.COMBAT) && threat != null) {
                 if (combatPreset != null && combatPreset.flex360Enabled() && brain.flexSpinTicks > 0) {
+                    tracePathing(fakePlayer, brain, threat, "combat-flex", "spin");
                     tick360Flex(fakePlayer, threat, brain);
                     return;
                 }
@@ -1613,10 +1616,13 @@ public final class PlayerBatchService {
                         ? 3.0D
                         : Math.max(1.6D, reach - 0.25D);
                 if (brain.attackRetreatTicks > 0 && combatPreset != null && combatPreset.stapEnabled()) {
+                    tracePathing(fakePlayer, brain, threat, "combat-stap", "retreat");
                     moveAwayFromThreat(fakePlayer, threat, 1.0F, brain);
                 } else if (horizontalDistance(fakePlayer, threat) > preferredDistance || Math.abs(threat.getY() - fakePlayer.getY()) > 1.25D) {
+                    tracePathing(fakePlayer, brain, threat, "combat-chase", "move");
                     moveTowardTarget(fakePlayer, threat, preferredDistance, 1.0F, combatPreset != null && combatPreset.stapEnabled(), brain, true);
                 } else {
+                    tracePathing(fakePlayer, brain, threat, "combat-attack", "swing");
                     stopActionMovement(fakePlayer, false);
                     tryAttackTarget(fakePlayer, threat, brain, combatPreset);
                 }
@@ -1624,6 +1630,7 @@ public final class PlayerBatchService {
             }
 
             if (modes.contains(BotAiMode.FOLLOW) && followTarget != null) {
+                tracePathing(fakePlayer, brain, followTarget, "follow", "move");
                 lookAtTarget(fakePlayer, followTarget);
                 moveTowardTarget(fakePlayer, followTarget, 2.5D, 0.9F, true, brain, false);
                 return;
@@ -1702,13 +1709,26 @@ public final class PlayerBatchService {
 
             Vec3 offset = target.position().subtract(source.position());
             double distance = offset.length();
-            if (distance <= preferredDistance || distance < 0.001D) {
+            double horizontalDistance = Math.sqrt(offset.x * offset.x + offset.z * offset.z);
+            double verticalDistance = Math.abs(offset.y);
+            boolean closeEnough = horizontalDistance <= preferredDistance && verticalDistance <= 0.6D;
+            if (closeEnough || distance < 0.001D) {
                 stopActionMovement(source, false);
                 return;
             }
 
             Vec3 horizontal = new Vec3(offset.x, 0.0D, offset.z);
             if (horizontal.lengthSqr() < 0.0001D) {
+                if (target.getY() < source.getY() - 0.35D) {
+                    EntityPlayerActionPack actionPack = actionPack(source);
+                    actionPack.setSneaking(false);
+                    actionPack.setSprinting(false);
+                    actionPack.setForward(0.0F);
+                    actionPack.setStrafing(brain.unstuckStrafeDirection);
+                    updateStuckState(source, brain, true, target);
+                    tracePathing(source, brain, target, "vertical-drop", "strafe-off-edge");
+                    return;
+                }
                 stopActionMovement(source, false);
                 return;
             }
@@ -1798,6 +1818,7 @@ public final class PlayerBatchService {
             }
             brain.terrainActionCooldownTicks = 6;
             stopActionMovement(source, false);
+            tracePathing(source, brain, null, "terrain-break", reason + " -> " + BuiltInRegistries.BLOCK.getKey(state.getBlock()));
             debug("{} broke {} at {} to {}", source.getGameProfile().name(), BuiltInRegistries.BLOCK.getKey(state.getBlock()), pos, reason);
             return true;
         }
@@ -1834,6 +1855,7 @@ public final class PlayerBatchService {
             }
             brain.terrainActionCooldownTicks = 6;
             stopActionMovement(source, false);
+            tracePathing(source, brain, null, "terrain-place", reason + " -> " + BuiltInRegistries.BLOCK.getKey(placeState.getBlock()));
             debug("{} placed {} at {} to {}", source.getGameProfile().name(), BuiltInRegistries.BLOCK.getKey(placeState.getBlock()), pos, reason);
             return true;
         }
@@ -1948,8 +1970,23 @@ public final class PlayerBatchService {
             return fakePlayer.level().getEntitiesOfClass(ItemEntity.class, fakePlayer.getBoundingBox().inflate(20.0D), itemEntity ->
                             itemEntity.isAlive() && !itemEntity.getItem().isEmpty() && isDesiredPickup(fakePlayer, itemEntity.getItem(), combatPreset))
                     .stream()
-                    .min(Comparator.comparingDouble(itemEntity -> itemEntity.distanceToSqr(fakePlayer)))
+                    .min(Comparator.comparingDouble(itemEntity -> pickupCost(fakePlayer, itemEntity)))
                     .orElse(null);
+        }
+
+        private double pickupCost(EntityPlayerMPFake fakePlayer, ItemEntity itemEntity) {
+            double horizontal = horizontalDistance(fakePlayer, itemEntity);
+            double vertical = Math.abs(itemEntity.getY() - fakePlayer.getY());
+            double cost = horizontal + (vertical * 2.0D);
+            if (itemEntity.getY() < fakePlayer.getY() - 0.75D) {
+                cost += 1.5D;
+            }
+            BlockPos itemPos = itemEntity.blockPosition();
+            BlockState belowItem = fakePlayer.level().getBlockState(itemPos.below());
+            if (belowItem.canBeReplaced() || belowItem.isAir()) {
+                cost += 4.0D;
+            }
+            return cost;
         }
 
         private boolean isDesiredPickup(EntityPlayerMPFake fakePlayer, ItemStack stack, CombatPresetSpec combatPreset) {
@@ -1985,6 +2022,7 @@ public final class PlayerBatchService {
             ItemStack dropped = fakePlayer.getInventory().removeItemNoUpdate(dropSlot);
             if (!dropped.isEmpty()) {
                 fakePlayer.drop(dropped, false);
+                debug("{} dropped {} from slot {} to make room for {}", fakePlayer.getGameProfile().name(), BuiltInRegistries.ITEM.getKey(dropped.getItem()), dropSlot, BuiltInRegistries.ITEM.getKey(desiredStack.getItem()));
             }
         }
 
@@ -2417,6 +2455,44 @@ public final class PlayerBatchService {
             if (PlayerBatchConfig.isDebugEnabled()) {
                 PlayerBatch.LOGGER.info("[PlayerBatch] " + pattern, args);
             }
+        }
+
+        private void tracePathing(EntityPlayerMPFake fakePlayer, BotBrain brain, Entity target, String strategy, String detail) {
+            if (!PlayerBatchConfig.isDebugEnabled()) {
+                return;
+            }
+
+            String targetLabel = describeTarget(target);
+            String message = strategy + "|" + detail + "|" + targetLabel;
+            if (message.equals(brain.lastPathDebugMessage) && brain.pathDebugCooldownTicks > 0) {
+                brain.pathDebugCooldownTicks--;
+                return;
+            }
+
+            brain.lastPathDebugMessage = message;
+            brain.pathDebugCooldownTicks = 12;
+            PlayerBatch.LOGGER.info(
+                    "[PlayerBatch] {} path target={} strategy={} detail={} pos={} selected={}",
+                    fakePlayer.getGameProfile().name(),
+                    targetLabel,
+                    strategy,
+                    detail,
+                    fakePlayer.blockPosition(),
+                    selectedIds.contains(fakePlayer.getUUID())
+            );
+        }
+
+        private String describeTarget(Entity target) {
+            if (target == null) {
+                return "none";
+            }
+            if (target instanceof ItemEntity itemEntity) {
+                return "item:" + BuiltInRegistries.ITEM.getKey(itemEntity.getItem().getItem()) + "@" + itemEntity.blockPosition();
+            }
+            if (target instanceof ServerPlayer player) {
+                return "player:" + player.getGameProfile().name() + "@" + player.blockPosition();
+            }
+            return target.getType().toShortString() + "@" + target.blockPosition();
         }
     }
 
@@ -3286,7 +3362,9 @@ public final class PlayerBatchService {
         private int unstuckStrafeTicks;
         private float unstuckStrafeDirection = 1.0F;
         private int terrainActionCooldownTicks;
+        private int pathDebugCooldownTicks;
         private Vec3 lastTrackedPosition;
+        private String lastPathDebugMessage;
         private ScriptedUseState scriptedUse;
     }
 
