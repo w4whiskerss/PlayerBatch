@@ -541,6 +541,20 @@ public final class PlayerBatchService {
         return 14;
     }
 
+    public static int showTestHelp(CommandSourceStack source) {
+        source.sendSuccess(() -> Component.literal("PlayerBatch test commands:"), false);
+        source.sendSuccess(() -> Component.literal("/pb test goto coords <x> <y> <z>"), false);
+        source.sendSuccess(() -> Component.literal("/pb test goto entity <target>"), false);
+        source.sendSuccess(() -> Component.literal("/pb test stop"), false);
+        source.sendSuccess(() -> Component.literal("/pb test wall"), false);
+        source.sendSuccess(() -> Component.literal("/pb test gap"), false);
+        source.sendSuccess(() -> Component.literal("/pb test climb"), false);
+        source.sendSuccess(() -> Component.literal("/pb test course"), false);
+        source.sendSuccess(() -> Component.literal("/pb test heal"), false);
+        source.sendSuccess(() -> Component.literal("/pb test drop <item> [count]"), false);
+        return 1;
+    }
+
     public static int summonCombatPreset(CommandSourceStack source, int count, String rawOptions) {
         try {
             CombatPresetParser.validate(rawOptions);
