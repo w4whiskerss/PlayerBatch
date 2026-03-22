@@ -15,6 +15,7 @@ import com.w4whiskers.playerbatch.extapi.PlayerBatchArgument;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import com.mojang.brigadier.suggestion.Suggestions;
@@ -27,7 +28,7 @@ import java.util.concurrent.CompletableFuture;
 public final class PlayerBatchCommand {
     private static final List<String> DIRECTION_SUGGESTIONS = List.of("up", "below", "north", "south", "east", "west");
     private static final List<String> SLOT_SUGGESTIONS = List.of("head", "chest", "legs", "feet", "mainhand", "offhand");
-    private static final List<String> FORMATION_SUGGESTIONS = List.of("circle", "square", "triangle", "random", "single_block");
+    private static final List<String> FORMATION_SUGGESTIONS = List.of("circle", "filled_circle", "square", "triangle", "random", "single_block");
     private static final List<String> AI_MODE_SUGGESTIONS = List.of(
             BotAiMode.IDLE.displayName(),
             BotAiMode.COMBAT.displayName(),
@@ -246,6 +247,15 @@ public final class PlayerBatchCommand {
                                         context.getSource(),
                                         StringArgumentType.getString(context, "action")
                                 ))))
+                .then(Commands.literal("look")
+                        .then(Commands.literal("at")
+                                .then(Commands.argument("player", EntityArgument.player())
+                                        .executes(context -> PlayerBatchService.lookSelectionAt(
+                                                context.getSource(),
+                                                EntityArgument.getPlayer(context, "player")
+                                        )))))
+                .then(Commands.literal("fixtags")
+                        .executes(context -> PlayerBatchService.fixBotTags(context.getSource())))
                 .then(Commands.literal("tp")
                         .then(Commands.literal("type=wand:selected")
                                 .then(Commands.argument("direction", StringArgumentType.word())

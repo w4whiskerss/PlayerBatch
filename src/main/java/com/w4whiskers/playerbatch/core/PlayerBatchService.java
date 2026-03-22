@@ -275,6 +275,22 @@ public final class PlayerBatchService {
         return finalBestAffected;
     }
 
+    public static int lookSelectionAt(CommandSourceStack source, ServerPlayer target) {
+        int affected = state(source.getServer()).lookSelectionAt(target);
+        if (affected <= 0) {
+            source.sendFailure(Component.literal("No selected fake players were available to look at " + target.getGameProfile().name() + "."));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Made " + affected + " selected bot" + suffix(affected) + " look at " + target.getGameProfile().name() + "."), true);
+        return affected;
+    }
+
+    public static int fixBotTags(CommandSourceStack source) {
+        int fixed = state(source.getServer()).fixBotTags();
+        source.sendSuccess(() -> Component.literal("Applied the bot tag to " + fixed + " fake player" + suffix(fixed) + "."), true);
+        return fixed;
+    }
+
     public static int teleportSelection(CommandSourceStack source, String directionName, String blockName) {
         Direction direction = parseDirection(directionName);
         if (direction == null) {
@@ -1031,6 +1047,31 @@ public final class PlayerBatchService {
             return succeeded;
         }
 
+        private int lookSelectionAt(ServerPlayer target) {
+            if (target == null) {
+                return 0;
+            }
+            List<EntityPlayerMPFake> players = selectedPlayers();
+            for (EntityPlayerMPFake player : players) {
+                lookAtTarget(player, target);
+                syncVisibleRotation(player);
+            }
+            broadcast(false);
+            return players.size();
+        }
+
+        private int fixBotTags() {
+            int fixed = 0;
+            for (ServerLevel level : server.getAllLevels()) {
+                for (EntityPlayerMPFake fakePlayer : level.getEntitiesOfClass(EntityPlayerMPFake.class, level.getWorldBorder().getCollisionShape().bounds())) {
+                    ensureBotTag(fakePlayer);
+                    fixed++;
+                }
+            }
+            broadcast(false);
+            return fixed;
+        }
+
         private int applySelectedItem(EquipmentSlot slot, Item item, int count) {
             List<EntityPlayerMPFake> players = selectedPlayers();
             int sanitizedCount = Math.max(1, count);
@@ -1582,6 +1623,21 @@ public final class PlayerBatchService {
                 return;
             }
             source.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, target.position().add(0.0D, target.getEyeHeight(), 0.0D));
+        }
+
+        private void syncVisibleRotation(EntityPlayerMPFake source) {
+            float yaw = source.getYRot();
+            float pitch = source.getXRot();
+            source.yRotO = yaw;
+            source.setYHeadRot(yaw);
+            source.yHeadRotO = yaw;
+            source.yBodyRot = yaw;
+            source.yBodyRotO = yaw;
+            ServerLevel level = (ServerLevel) source.level();
+            byte headYaw = (byte) Math.floor(yaw * 256.0F / 360.0F);
+            byte packedPitch = (byte) Math.floor(pitch * 256.0F / 360.0F);
+            level.getServer().getPlayerList().broadcastAll(new ClientboundMoveEntityPacket.Rot(source.getId(), headYaw, packedPitch, source.onGround()), level.dimension());
+            level.getServer().getPlayerList().broadcastAll(new ClientboundRotateHeadPacket(source, headYaw), level.dimension());
         }
 
         private EntityPlayerActionPack actionPack(EntityPlayerMPFake source) {
@@ -2484,6 +2540,7 @@ public final class PlayerBatchService {
                 return buildExtensionEntries(source, names, normalizedFormation, extensionFormation);
             }
             return switch (normalizedFormation) {
+                case "filled circle" -> buildFilledCircleEntries(source, names);
                 case "square" -> buildSquareEntries(source, names);
                 case "triangle" -> buildTriangleEntries(source, names);
                 case "random" -> buildRandomEntries(source, names);
@@ -2535,6 +2592,40 @@ public final class PlayerBatchService {
                 double y = topY;
                 String command = String.format(Locale.ROOT, "player %s spawn at %.3f %.3f %.3f", names.get(index), x, y, z);
                 entries.add(new SummonEntry(names.get(index), command));
+            }
+            return entries;
+        }
+
+        private List<SummonEntry> buildFilledCircleEntries(CommandSourceStack source, List<String> names) {
+            List<SummonEntry> entries = new ArrayList<>(names.size());
+            Vec3 center = source.getPosition();
+            ServerLevel level = source.getLevel();
+            double spacing = 2.0D;
+            if (names.size() == 1) {
+                entries.add(buildEntry(level, center, names.get(0), center.x, center.z));
+                return entries;
+            }
+
+            int placed = 0;
+            int ring = 0;
+            while (placed < names.size()) {
+                if (ring == 0) {
+                    entries.add(buildEntry(level, center, names.get(placed), center.x, center.z));
+                    placed++;
+                    ring++;
+                    continue;
+                }
+
+                double radius = ring * spacing;
+                int pointsInRing = Math.max(6, (int) Math.ceil((2.0D * Math.PI * radius) / spacing));
+                for (int index = 0; index < pointsInRing && placed < names.size(); index++) {
+                    double angle = (Math.PI * 2.0D * index) / pointsInRing;
+                    double x = center.x + Math.cos(angle) * radius;
+                    double z = center.z + Math.sin(angle) * radius;
+                    entries.add(buildEntry(level, center, names.get(placed), x, z));
+                    placed++;
+                }
+                ring++;
             }
             return entries;
         }
@@ -2725,7 +2816,8 @@ public final class PlayerBatchService {
         }
         String normalized = rawFormation.trim().toLowerCase(Locale.ROOT);
         String builtin = switch (normalized) {
-            case "circle", "square", "triangle", "random", "single block" -> normalized;
+            case "circle", "filled circle", "square", "triangle", "random", "single block" -> normalized;
+            case "filled_circle", "filledcircle" -> "filled circle";
             case "single_block", "singleblock" -> "single block";
             default -> null;
         };
