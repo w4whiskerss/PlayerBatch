@@ -203,6 +203,31 @@ public final class PlayerBatchCommand {
                                 .executes(context -> PlayerBatchService.setSelectedCombatMode(context.getSource(), true)))
                         .then(Commands.literal("off")
                                 .executes(context -> PlayerBatchService.setSelectedCombatMode(context.getSource(), false))))
+                .then(Commands.literal("test")
+                        .then(Commands.literal("wall")
+                                .executes(context -> PlayerBatchService.buildTestStructure(context.getSource(), "wall")))
+                        .then(Commands.literal("gap")
+                                .executes(context -> PlayerBatchService.buildTestStructure(context.getSource(), "gap")))
+                        .then(Commands.literal("climb")
+                                .executes(context -> PlayerBatchService.buildTestStructure(context.getSource(), "climb")))
+                        .then(Commands.literal("course")
+                                .executes(context -> PlayerBatchService.buildTestStructure(context.getSource(), "course")))
+                        .then(Commands.literal("drop")
+                                .then(Commands.argument("item", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(
+                                                BuiltInRegistries.ITEM.keySet().stream().map(Object::toString), builder
+                                        ))
+                                        .executes(context -> PlayerBatchService.dropTestItem(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "item"),
+                                                1
+                                        ))
+                                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 64))
+                                                .executes(context -> PlayerBatchService.dropTestItem(
+                                                        context.getSource(),
+                                                        StringArgumentType.getString(context, "item"),
+                                                        IntegerArgumentType.getInteger(context, "count")
+                                                ))))))
                 .then(Commands.literal("customize")
                         .then(Commands.literal("item")
                                 .then(Commands.argument("slot", StringArgumentType.word())

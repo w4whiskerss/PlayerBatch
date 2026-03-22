@@ -45,6 +45,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.alchemy.PotionContents;
 import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.gamerules.GameRules;
@@ -459,6 +460,37 @@ public final class PlayerBatchService {
         }
         source.sendSuccess(() -> Component.literal(result.message()), true);
         return result.affected();
+    }
+
+    public static int buildTestStructure(CommandSourceStack source, String kind) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.literal("Only players can build local test structures."));
+            return 0;
+        }
+        int built = state(source.getServer()).buildTestStructure(player, kind);
+        if (built <= 0) {
+            source.sendFailure(Component.literal("Unknown test structure: " + kind));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Built test structure '" + kind + "' in front of you."), true);
+        return built;
+    }
+
+    public static int dropTestItem(CommandSourceStack source, String rawItem, int count) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.literal("Only players can drop local test items."));
+            return 0;
+        }
+        Item item = parseItem(rawItem);
+        if (item == null) {
+            source.sendFailure(Component.literal("Unknown item: " + rawItem));
+            return 0;
+        }
+        int dropped = state(source.getServer()).dropTestItem(player, item, count);
+        source.sendSuccess(() -> Component.literal("Dropped test item " + BuiltInRegistries.ITEM.getKey(item) + " x" + Math.max(1, count) + "."), true);
+        return dropped;
     }
 
     public static int summonCombatPreset(CommandSourceStack source, int count, String rawOptions) {
@@ -1083,6 +1115,55 @@ public final class PlayerBatchService {
             }
             broadcast(false);
             return fixed;
+        }
+
+        private int buildTestStructure(ServerPlayer player, String kind) {
+            String normalized = kind == null ? "" : kind.trim().toLowerCase(Locale.ROOT);
+            ServerLevel level = (ServerLevel) player.level();
+            Direction facing = cardinalFacing(player);
+            Direction right = facing.getClockWise();
+            BlockPos base = player.blockPosition().relative(facing, 5);
+            switch (normalized) {
+                case "wall" -> {
+                    fillBox(level, base.relative(right, -1), base.relative(right, 1).above(2), Blocks.STONE_BRICKS.defaultBlockState());
+                    return 1;
+                }
+                case "gap" -> {
+                    fillBox(level, base.relative(right, -2), base.relative(facing, 8).relative(right, 2), Blocks.STONE.defaultBlockState());
+                    clearBox(level, base.relative(facing, 2).relative(right, -1), base.relative(facing, 4).relative(right, 1));
+                    clearBox(level, base.relative(facing, 2).below(), base.relative(facing, 4).relative(right, 1).below());
+                    return 1;
+                }
+                case "climb" -> {
+                    placeStepColumn(level, base, facing, right);
+                    return 1;
+                }
+                case "course" -> {
+                    fillBox(level, base.relative(right, -2), base.relative(facing, 22).relative(right, 2), Blocks.SMOOTH_STONE.defaultBlockState());
+                    fillBox(level, base.relative(facing, 5).relative(right, -1), base.relative(facing, 5).relative(right, 1).above(2), Blocks.STONE_BRICKS.defaultBlockState());
+                    clearBox(level, base.relative(facing, 9).relative(right, -1), base.relative(facing, 12).relative(right, 1));
+                    clearBox(level, base.relative(facing, 9).relative(right, -1).below(), base.relative(facing, 12).relative(right, 1).below());
+                    placeCourseSteps(level, base.relative(facing, 15), facing, right);
+                    return 1;
+                }
+                default -> {
+                    return 0;
+                }
+            }
+        }
+
+        private int dropTestItem(ServerPlayer player, Item item, int count) {
+            Direction facing = cardinalFacing(player);
+            BlockPos targetPos = player.blockPosition().relative(facing, 6).below();
+            ItemEntity itemEntity = new ItemEntity(
+                    player.level(),
+                    targetPos.getX() + 0.5D,
+                    targetPos.getY() + 0.2D,
+                    targetPos.getZ() + 0.5D,
+                    new ItemStack(item, Math.max(1, count))
+            );
+            player.level().addFreshEntity(itemEntity);
+            return Math.max(1, count);
         }
 
         private int applySelectedItem(EquipmentSlot slot, Item item, int count) {
@@ -1736,7 +1817,7 @@ public final class PlayerBatchService {
 
             EntityPlayerActionPack actionPack = actionPack(source);
             lookAtTarget(source, target);
-            if (allowTerrainTools && target instanceof LivingEntity livingTarget && tryCombatTerrainAdjustment(source, livingTarget, brain)) {
+            if (allowTerrainTools && tryTerrainAdjustment(source, target, brain)) {
                 return;
             }
             float desiredForward = Math.max(0.35F, Math.min(1.0F, forwardPower));
@@ -1753,7 +1834,7 @@ public final class PlayerBatchService {
             updateStuckState(source, brain, true, target);
         }
 
-        private boolean tryCombatTerrainAdjustment(EntityPlayerMPFake source, LivingEntity target, BotBrain brain) {
+        private boolean tryTerrainAdjustment(EntityPlayerMPFake source, Entity target, BotBrain brain) {
             if (brain.terrainActionCooldownTicks > 0 || source.level() != target.level()) {
                 return false;
             }
@@ -3339,6 +3420,50 @@ public final class PlayerBatchService {
             return 1;
         }
         return -1;
+    }
+
+    private static Direction cardinalFacing(ServerPlayer player) {
+        return Direction.fromYRot(player.getYRot());
+    }
+
+    private static void fillBox(ServerLevel level, BlockPos from, BlockPos to, BlockState state) {
+        BlockPos min = new BlockPos(
+                Math.min(from.getX(), to.getX()),
+                Math.min(from.getY(), to.getY()),
+                Math.min(from.getZ(), to.getZ())
+        );
+        BlockPos max = new BlockPos(
+                Math.max(from.getX(), to.getX()),
+                Math.max(from.getY(), to.getY()),
+                Math.max(from.getZ(), to.getZ())
+        );
+        for (int x = min.getX(); x <= max.getX(); x++) {
+            for (int y = min.getY(); y <= max.getY(); y++) {
+                for (int z = min.getZ(); z <= max.getZ(); z++) {
+                    level.setBlock(new BlockPos(x, y, z), state, Block.UPDATE_ALL);
+                }
+            }
+        }
+    }
+
+    private static void clearBox(ServerLevel level, BlockPos from, BlockPos to) {
+        fillBox(level, from, to, Blocks.AIR.defaultBlockState());
+    }
+
+    private static void placeStepColumn(ServerLevel level, BlockPos base, Direction forward, Direction right) {
+        for (int step = 0; step < 4; step++) {
+            BlockPos stepPos = base.relative(forward, step * 2);
+            fillBox(level, stepPos.relative(right, -1).above(step), stepPos.relative(right, 1).above(step), Blocks.STONE.defaultBlockState());
+        }
+        fillBox(level, base.relative(forward, 8).relative(right, -1), base.relative(forward, 8).relative(right, 1).above(4), Blocks.STONE_BRICKS.defaultBlockState());
+    }
+
+    private static void placeCourseSteps(ServerLevel level, BlockPos base, Direction forward, Direction right) {
+        for (int step = 0; step < 3; step++) {
+            BlockPos stepPos = base.relative(forward, step * 2);
+            fillBox(level, stepPos.relative(right, -1).above(step), stepPos.relative(right, 1).above(step), Blocks.OAK_PLANKS.defaultBlockState());
+        }
+        fillBox(level, base.relative(forward, 6).relative(right, -1), base.relative(forward, 6).relative(right, 1).above(3), Blocks.STONE_BRICKS.defaultBlockState());
     }
 
     private static String suffix(int count) {
