@@ -1254,6 +1254,12 @@ public final class PlayerBatchService {
                 bot.getFoodData().setFoodLevel(20);
                 bot.removeAllEffects();
                 applyCombatPreset(bot, preset);
+                BotBrain brain = ensureBrain(bot);
+                brain.gotoActive = false;
+                brain.gotoTargetPosition = null;
+                brain.gotoTargetEntityId = null;
+                brain.healTestActive = true;
+                brain.healTestTargetPosition = Vec3.atBottomCenterOf(laneEnd);
                 index++;
             }
             return players.size();
@@ -1579,6 +1585,8 @@ public final class PlayerBatchService {
                 brain.gotoTargetPosition = positionTarget;
                 brain.gotoTargetEntityId = entityTarget == null ? null : entityTarget.getUUID();
                 brain.gotoActive = true;
+                brain.healTestActive = false;
+                brain.healTestTargetPosition = null;
                 affected++;
             }
             broadcast(false);
@@ -1599,10 +1607,19 @@ public final class PlayerBatchService {
                 brain.gotoActive = false;
                 brain.gotoTargetPosition = null;
                 brain.gotoTargetEntityId = null;
+                if (brain.healTestActive) {
+                    brain.healTestActive = false;
+                    brain.healTestTargetPosition = null;
+                    brain.combatPreset = null;
+                    if (brain.groupKey == null) {
+                        brain.modes = EnumSet.of(BotAiMode.IDLE);
+                    }
+                }
+                stopActionMovement(player, true);
                 affected++;
             }
             broadcast(false);
-            return AiResult.success("Cleared goto target for " + affected + " selected bot" + suffix(affected) + ".", affected);
+            return AiResult.success("Stopped test routing for " + affected + " selected bot" + suffix(affected) + ".", affected);
         }
 
         private AiResult setAllAiModes(EnumSet<BotAiMode> modes) {
@@ -1863,6 +1880,31 @@ public final class PlayerBatchService {
             if (combatPreset != null) {
                 manageCombatInventory(fakePlayer, combatPreset);
                 ItemEntity desiredPickup = findDesiredPickup(fakePlayer, combatPreset);
+                if (brain.healTestActive) {
+                    if (!hasLowHealth(fakePlayer) && findBestHealingChoice(fakePlayer) != null) {
+                        brain.healTestActive = false;
+                        brain.healTestTargetPosition = null;
+                        brain.combatPreset = null;
+                        if (brain.groupKey == null) {
+                            brain.modes = EnumSet.of(BotAiMode.IDLE);
+                        }
+                        stopActionMovement(fakePlayer, false);
+                        tracePathing(fakePlayer, brain, null, "heal-test", "complete");
+                        return;
+                    }
+                    if (desiredPickup != null && isHealingPickup(desiredPickup.getItem())) {
+                        tracePathing(fakePlayer, brain, desiredPickup, "heal-test-pickup", "move");
+                        prepareInventorySpaceFor(fakePlayer, desiredPickup.getItem(), combatPreset);
+                        lookAtTarget(fakePlayer, desiredPickup);
+                        moveTowardTarget(fakePlayer, desiredPickup, 0.2D, 0.95F, false, brain, true);
+                        return;
+                    }
+                    if (brain.healTestTargetPosition != null) {
+                        traceGotoPosition(fakePlayer, brain, "heal-test-route");
+                        moveTowardPosition(fakePlayer, brain.healTestTargetPosition, brain, true);
+                        return;
+                    }
+                }
                 if (hasLowHealth(fakePlayer)) {
                     HealingChoice healingChoice = findBestHealingChoice(fakePlayer);
                     if (healingChoice != null) {
@@ -3985,6 +4027,8 @@ public final class PlayerBatchService {
         private boolean gotoActive;
         private Vec3 gotoTargetPosition;
         private UUID gotoTargetEntityId;
+        private boolean healTestActive;
+        private Vec3 healTestTargetPosition;
         private int stuckTicks;
         private int unstuckStrafeTicks;
         private float unstuckStrafeDirection = 1.0F;
