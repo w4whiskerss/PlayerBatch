@@ -1062,8 +1062,8 @@ public final class PlayerBatchService {
 
         private int fixBotTags() {
             int fixed = 0;
-            for (ServerLevel level : server.getAllLevels()) {
-                for (EntityPlayerMPFake fakePlayer : level.getEntitiesOfClass(EntityPlayerMPFake.class, level.getWorldBorder().getCollisionShape().bounds())) {
+            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                if (player instanceof EntityPlayerMPFake fakePlayer) {
                     ensureBotTag(fakePlayer);
                     fixed++;
                 }
