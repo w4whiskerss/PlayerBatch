@@ -477,6 +477,40 @@ public final class PlayerBatchService {
         return built;
     }
 
+    public static int testGotoPosition(CommandSourceStack source, int x, int y, int z) {
+        AiResult result = state(source.getServer()).setSelectedGotoTarget(new Vec3(x + 0.5D, y, z + 0.5D), null);
+        if (!result.success()) {
+            source.sendFailure(Component.literal(result.message()));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(result.message()), true);
+        return result.affected();
+    }
+
+    public static int testGotoEntity(CommandSourceStack source, Entity target) {
+        if (target == null) {
+            source.sendFailure(Component.literal("No target entity provided."));
+            return 0;
+        }
+        AiResult result = state(source.getServer()).setSelectedGotoTarget(null, target);
+        if (!result.success()) {
+            source.sendFailure(Component.literal(result.message()));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(result.message()), true);
+        return result.affected();
+    }
+
+    public static int clearTestGoto(CommandSourceStack source) {
+        AiResult result = state(source.getServer()).clearSelectedGotoTarget();
+        if (!result.success()) {
+            source.sendFailure(Component.literal(result.message()));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(result.message()), true);
+        return result.affected();
+    }
+
     public static int dropTestItem(CommandSourceStack source, String rawItem, int count) {
         ServerPlayer player = source.getPlayer();
         if (player == null) {
@@ -491,6 +525,20 @@ public final class PlayerBatchService {
         int dropped = state(source.getServer()).dropTestItem(player, item, count);
         source.sendSuccess(() -> Component.literal("Dropped test item " + BuiltInRegistries.ITEM.getKey(item) + " x" + Math.max(1, count) + "."), true);
         return dropped;
+    }
+
+    public static int dropHealingTestPack(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.literal("Only players can drop local healing test packs."));
+            return 0;
+        }
+        ServerState state = state(source.getServer());
+        state.dropTestItem(player, Items.GOLDEN_APPLE, 8);
+        state.dropRawTestStack(player, createPotionStack(Items.SPLASH_POTION, Potions.HEALING, 4));
+        state.dropRawTestStack(player, createPotionStack(Items.POTION, Potions.REGENERATION, 2));
+        source.sendSuccess(() -> Component.literal("Dropped healing test pack: golden apples, splash healing, regeneration."), true);
+        return 14;
     }
 
     public static int summonCombatPreset(CommandSourceStack source, int count, String rawOptions) {
@@ -1166,6 +1214,19 @@ public final class PlayerBatchService {
             return Math.max(1, count);
         }
 
+        private void dropRawTestStack(ServerPlayer player, ItemStack stack) {
+            Direction facing = cardinalFacing(player);
+            BlockPos targetPos = player.blockPosition().relative(facing, 6).below();
+            ItemEntity itemEntity = new ItemEntity(
+                    player.level(),
+                    targetPos.getX() + 0.5D,
+                    targetPos.getY() + 0.2D,
+                    targetPos.getZ() + 0.5D,
+                    stack.copy()
+            );
+            player.level().addFreshEntity(itemEntity);
+        }
+
         private int applySelectedItem(EquipmentSlot slot, Item item, int count) {
             List<EntityPlayerMPFake> players = selectedPlayers();
             int sanitizedCount = Math.max(1, count);
@@ -1432,6 +1493,48 @@ public final class PlayerBatchService {
             return AiResult.success("Set AI mode to '" + BotAiMode.displayModes(modes) + "' for " + players.size() + " selected bot" + suffix(players.size()) + ".", players.size());
         }
 
+        private AiResult setSelectedGotoTarget(Vec3 positionTarget, Entity entityTarget) {
+            List<EntityPlayerMPFake> players = selectedPlayers();
+            if (players.isEmpty()) {
+                return AiResult.failure("Select one or more managed bots first.");
+            }
+
+            if (positionTarget == null && entityTarget == null) {
+                return AiResult.failure("No goto target was provided.");
+            }
+
+            int affected = 0;
+            for (EntityPlayerMPFake player : players) {
+                BotBrain brain = ensureBrain(player);
+                brain.gotoTargetPosition = positionTarget;
+                brain.gotoTargetEntityId = entityTarget == null ? null : entityTarget.getUUID();
+                brain.gotoActive = true;
+                affected++;
+            }
+            broadcast(false);
+            String targetLabel = entityTarget != null
+                    ? "entity " + describeTarget(entityTarget)
+                    : "coords " + BlockPos.containing(positionTarget);
+            return AiResult.success("Set goto target to " + targetLabel + " for " + affected + " selected bot" + suffix(affected) + ".", affected);
+        }
+
+        private AiResult clearSelectedGotoTarget() {
+            List<EntityPlayerMPFake> players = selectedPlayers();
+            if (players.isEmpty()) {
+                return AiResult.failure("Select one or more managed bots first.");
+            }
+            int affected = 0;
+            for (EntityPlayerMPFake player : players) {
+                BotBrain brain = ensureBrain(player);
+                brain.gotoActive = false;
+                brain.gotoTargetPosition = null;
+                brain.gotoTargetEntityId = null;
+                affected++;
+            }
+            broadcast(false);
+            return AiResult.success("Cleared goto target for " + affected + " selected bot" + suffix(affected) + ".", affected);
+        }
+
         private AiResult setAllAiModes(EnumSet<BotAiMode> modes) {
             List<EntityPlayerMPFake> players = fakePlayers();
             if (players.isEmpty()) {
@@ -1626,6 +1729,46 @@ public final class PlayerBatchService {
             EnumSet<BotAiMode> modes = brain.modes.isEmpty() ? EnumSet.of(BotAiMode.IDLE) : EnumSet.copyOf(brain.modes);
             CombatPresetSpec combatPreset = brain.combatPreset;
 
+            Entity gotoTarget = resolveGotoEntityTarget(fakePlayer, brain);
+            if (brain.gotoActive) {
+                if (gotoTarget != null) {
+                    double desiredDistance = gotoTarget instanceof ItemEntity ? 0.2D : 1.5D;
+                    double horizontal = horizontalDistance(fakePlayer, gotoTarget);
+                    double vertical = Math.abs(gotoTarget.getY() - fakePlayer.getY());
+                    if (horizontal <= desiredDistance && vertical <= 0.8D) {
+                        stopActionMovement(fakePlayer, false);
+                        tracePathing(fakePlayer, brain, gotoTarget, "goto", "arrived");
+                        brain.gotoActive = false;
+                        brain.gotoTargetEntityId = null;
+                        brain.gotoTargetPosition = null;
+                    } else {
+                        tracePathing(fakePlayer, brain, gotoTarget, "goto", "move");
+                        lookAtTarget(fakePlayer, gotoTarget);
+                        moveTowardTarget(fakePlayer, gotoTarget, desiredDistance, 1.0F, false, brain, true);
+                        return;
+                    }
+                } else if (brain.gotoTargetPosition != null) {
+                    double dx = brain.gotoTargetPosition.x - fakePlayer.getX();
+                    double dz = brain.gotoTargetPosition.z - fakePlayer.getZ();
+                    double horizontal = Math.sqrt(dx * dx + dz * dz);
+                    double vertical = Math.abs(brain.gotoTargetPosition.y - fakePlayer.getY());
+                    if (horizontal <= 0.75D && vertical <= 0.8D) {
+                        stopActionMovement(fakePlayer, false);
+                        traceGotoPosition(fakePlayer, brain, "arrived");
+                        brain.gotoActive = false;
+                        brain.gotoTargetPosition = null;
+                    } else {
+                        traceGotoPosition(fakePlayer, brain, "move");
+                        moveTowardPosition(fakePlayer, brain.gotoTargetPosition, brain, true);
+                        return;
+                    }
+                } else {
+                    brain.gotoActive = false;
+                    brain.gotoTargetEntityId = null;
+                    brain.gotoTargetPosition = null;
+                }
+            }
+
             ServerPlayer followTarget = modes.contains(BotAiMode.FOLLOW) ? findNearestPlayerTarget(fakePlayer, -1.0D) : null;
             LivingEntity threat = (modes.contains(BotAiMode.GUARD) || modes.contains(BotAiMode.COMBAT) || modes.contains(BotAiMode.FLEE) || combatPreset != null)
                     ? findNearestThreat(fakePlayer, 16.0D)
@@ -1729,6 +1872,51 @@ public final class PlayerBatchService {
             }
         }
 
+        private void moveTowardPosition(EntityPlayerMPFake source, Vec3 targetPos, BotBrain brain, boolean allowTerrainTools) {
+            Vec3 offset = targetPos.subtract(source.position());
+            double distance = offset.length();
+            if (distance < 0.001D) {
+                stopActionMovement(source, false);
+                return;
+            }
+
+            Vec3 horizontal = new Vec3(offset.x, 0.0D, offset.z);
+            if (horizontal.lengthSqr() < 0.0001D) {
+                stopActionMovement(source, false);
+                return;
+            }
+
+            if (allowTerrainTools && tryTerrainAdjustment(source, BlockPos.containing(targetPos), brain)) {
+                return;
+            }
+
+            EntityPlayerActionPack actionPack = actionPack(source);
+            lookAtPosition(source, targetPos);
+            boolean shouldJump = shouldJumpTowardPosition(source, targetPos, horizontal.normalize().scale(0.8D), brain);
+            actionPack.setSneaking(false);
+            actionPack.setSprinting(distance > 4.0D);
+            actionPack.setStrafing(brain.unstuckStrafeTicks > 0 ? brain.unstuckStrafeDirection * 0.7F : 0.0F);
+            actionPack.setForward(1.0F);
+            if (shouldJump) {
+                actionPack.start(EntityPlayerActionPack.ActionType.JUMP, EntityPlayerActionPack.Action.once());
+            }
+            updateStuckState(source, brain, true, null);
+        }
+
+        private Entity resolveGotoEntityTarget(EntityPlayerMPFake fakePlayer, BotBrain brain) {
+            if (!brain.gotoActive) {
+                return null;
+            }
+            if (brain.gotoTargetEntityId != null) {
+                Entity entity = ((ServerLevel) fakePlayer.level()).getEntity(brain.gotoTargetEntityId);
+                if (entity != null && entity.isAlive() && entity.level() == fakePlayer.level()) {
+                    return entity;
+                }
+                return null;
+            }
+            return null;
+        }
+
         private ServerPlayer findNearestPlayerTarget(EntityPlayerMPFake source, double range) {
             return server.getPlayerList().getPlayers().stream()
                     .filter(player -> !player.getUUID().equals(source.getUUID()))
@@ -1752,6 +1940,10 @@ public final class PlayerBatchService {
                 return;
             }
             source.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, target.position().add(0.0D, target.getEyeHeight(), 0.0D));
+        }
+
+        private void lookAtPosition(EntityPlayerMPFake source, Vec3 targetPos) {
+            source.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, targetPos);
         }
 
         private void syncVisibleRotation(EntityPlayerMPFake source) {
@@ -1878,6 +2070,50 @@ public final class PlayerBatchService {
             return false;
         }
 
+        private boolean tryTerrainAdjustment(EntityPlayerMPFake source, BlockPos targetPos, BotBrain brain) {
+            if (brain.terrainActionCooldownTicks > 0) {
+                return false;
+            }
+
+            Direction approach = horizontalDirectionToward(source.blockPosition(), targetPos);
+            if (approach == null) {
+                return false;
+            }
+
+            ServerLevel level = (ServerLevel) source.level();
+            BlockPos feet = source.blockPosition();
+            BlockPos frontFeet = feet.relative(approach);
+            BlockPos frontHead = frontFeet.above();
+            BlockPos frontTop = frontHead.above();
+            BlockPos bridgePos = frontFeet.below();
+            double verticalGap = targetPos.getY() - source.getY();
+
+            if (verticalGap > 0.8D && isReplaceable(level.getBlockState(frontFeet)) && hasSolidSupport(level, bridgePos)) {
+                if (tryPlaceCombatBlock(source, frontFeet, brain, "step up")) {
+                    actionPack(source).start(EntityPlayerActionPack.ActionType.JUMP, EntityPlayerActionPack.Action.once());
+                    return true;
+                }
+            }
+
+            if (isReplaceable(level.getBlockState(frontFeet)) && isReplaceable(level.getBlockState(bridgePos))) {
+                if (tryPlaceCombatBlock(source, bridgePos, brain, "bridge gap")) {
+                    return true;
+                }
+            }
+
+            if (isBlockingObstacle(level.getBlockState(frontFeet)) && tryBreakCombatBlock(source, frontFeet, brain, "front wall")) {
+                return true;
+            }
+            if (isBlockingObstacle(level.getBlockState(frontHead)) && tryBreakCombatBlock(source, frontHead, brain, "head wall")) {
+                return true;
+            }
+            if (verticalGap > 1.5D && isBlockingObstacle(level.getBlockState(frontTop)) && tryBreakCombatBlock(source, frontTop, brain, "top wall")) {
+                return true;
+            }
+
+            return false;
+        }
+
         private void resetBreakProgress(EntityPlayerMPFake source, BotBrain brain) {
             if (brain.breakingBlockPos != null) {
                 ((ServerLevel) source.level()).destroyBlockProgress(source.getId(), brain.breakingBlockPos, -1);
@@ -1888,13 +2124,19 @@ public final class PlayerBatchService {
         }
 
         private Direction horizontalDirectionToward(EntityPlayerMPFake source, Entity target) {
-            Vec3 delta = target.position().subtract(source.position());
-            if (Math.abs(delta.x) < 0.001D && Math.abs(delta.z) < 0.001D) {
+            return horizontalDirectionToward(source.blockPosition(), target.blockPosition());
+        }
+
+        private Direction horizontalDirectionToward(BlockPos from, BlockPos to) {
+            int dx = to.getX() - from.getX();
+            int dz = to.getZ() - from.getZ();
+            if (dx == 0 && dz == 0) {
                 return null;
             }
-            return Math.abs(delta.x) >= Math.abs(delta.z)
-                    ? (delta.x >= 0.0D ? Direction.EAST : Direction.WEST)
-                    : (delta.z >= 0.0D ? Direction.SOUTH : Direction.NORTH);
+            if (Math.abs(dx) >= Math.abs(dz)) {
+                return dx >= 0 ? Direction.EAST : Direction.WEST;
+            }
+            return dz >= 0 ? Direction.SOUTH : Direction.NORTH;
         }
 
         private boolean tryBreakCombatBlock(EntityPlayerMPFake source, BlockPos pos, BotBrain brain, String reason) {
@@ -2527,6 +2769,19 @@ public final class PlayerBatchService {
             return brain.stuckTicks >= 8;
         }
 
+        private boolean shouldJumpTowardPosition(EntityPlayerMPFake source, Vec3 targetPos, Vec3 motion, BotBrain brain) {
+            BlockPos stepPos = BlockPos.containing(source.getX() + motion.x * 1.2D, source.getY(), source.getZ() + motion.z * 1.2D);
+            boolean stepBlocked = source.level().getBlockState(stepPos).blocksMotion()
+                    && !source.level().getBlockState(stepPos.above()).blocksMotion();
+            if (stepBlocked) {
+                return true;
+            }
+            if (targetPos.y > source.getY() + 0.75D) {
+                return true;
+            }
+            return brain.stuckTicks >= 8;
+        }
+
         private boolean shouldSneakTowardTarget(EntityPlayerMPFake source, Entity target, Vec3 motion) {
             BlockPos aheadBelow = BlockPos.containing(source.getX() + motion.x * 1.1D, source.getY() - 1.0D, source.getZ() + motion.z * 1.1D);
             if (!source.level().getBlockState(aheadBelow).isAir()) {
@@ -2598,6 +2853,28 @@ public final class PlayerBatchService {
                     fakePlayer.getGameProfile().name(),
                     targetLabel,
                     strategy,
+                    detail,
+                    fakePlayer.blockPosition(),
+                    selectedIds.contains(fakePlayer.getUUID())
+            );
+        }
+
+        private void traceGotoPosition(EntityPlayerMPFake fakePlayer, BotBrain brain, String detail) {
+            if (!PlayerBatchConfig.isDebugEnabled() || brain.gotoTargetPosition == null) {
+                return;
+            }
+            String targetLabel = "coords:" + BlockPos.containing(brain.gotoTargetPosition);
+            String message = "goto|" + detail + "|" + targetLabel;
+            if (message.equals(brain.lastPathDebugMessage) && brain.pathDebugCooldownTicks > 0) {
+                brain.pathDebugCooldownTicks--;
+                return;
+            }
+            brain.lastPathDebugMessage = message;
+            brain.pathDebugCooldownTicks = 12;
+            PlayerBatch.LOGGER.info(
+                    "[PlayerBatch] {} path target={} strategy=goto detail={} pos={} selected={}",
+                    fakePlayer.getGameProfile().name(),
+                    targetLabel,
                     detail,
                     fakePlayer.blockPosition(),
                     selectedIds.contains(fakePlayer.getUUID())
@@ -3466,6 +3743,12 @@ public final class PlayerBatchService {
         fillBox(level, base.relative(forward, 6).relative(right, -1), base.relative(forward, 6).relative(right, 1).above(3), Blocks.STONE_BRICKS.defaultBlockState());
     }
 
+    private static ItemStack createPotionStack(Item item, net.minecraft.core.Holder<net.minecraft.world.item.alchemy.Potion> potion, int count) {
+        ItemStack stack = new ItemStack(item, Math.max(1, count));
+        stack.set(DataComponents.POTION_CONTENTS, new PotionContents(potion));
+        return stack;
+    }
+
     private static String suffix(int count) {
         return count == 1 ? "" : "s";
     }
@@ -3524,6 +3807,9 @@ public final class PlayerBatchService {
         private int flexSpinTicks;
         private int flexSpinDirection = 1;
         private float flexSpinProgress;
+        private boolean gotoActive;
+        private Vec3 gotoTargetPosition;
+        private UUID gotoTargetEntityId;
         private int stuckTicks;
         private int unstuckStrafeTicks;
         private float unstuckStrafeDirection = 1.0F;

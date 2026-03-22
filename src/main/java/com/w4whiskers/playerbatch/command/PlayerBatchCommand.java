@@ -204,6 +204,25 @@ public final class PlayerBatchCommand {
                         .then(Commands.literal("off")
                                 .executes(context -> PlayerBatchService.setSelectedCombatMode(context.getSource(), false))))
                 .then(Commands.literal("test")
+                        .then(Commands.literal("goto")
+                                .then(Commands.literal("coords")
+                                        .then(Commands.argument("x", IntegerArgumentType.integer())
+                                                .then(Commands.argument("y", IntegerArgumentType.integer())
+                                                        .then(Commands.argument("z", IntegerArgumentType.integer())
+                                                                .executes(context -> PlayerBatchService.testGotoPosition(
+                                                                        context.getSource(),
+                                                                        IntegerArgumentType.getInteger(context, "x"),
+                                                                        IntegerArgumentType.getInteger(context, "y"),
+                                                                        IntegerArgumentType.getInteger(context, "z")
+                                                                ))))))
+                                .then(Commands.literal("entity")
+                                        .then(Commands.argument("target", EntityArgument.entity())
+                                                .executes(context -> PlayerBatchService.testGotoEntity(
+                                                        context.getSource(),
+                                                        EntityArgument.getEntity(context, "target")
+                                                )))))
+                        .then(Commands.literal("stop")
+                                .executes(context -> PlayerBatchService.clearTestGoto(context.getSource())))
                         .then(Commands.literal("wall")
                                 .executes(context -> PlayerBatchService.buildTestStructure(context.getSource(), "wall")))
                         .then(Commands.literal("gap")
@@ -212,6 +231,8 @@ public final class PlayerBatchCommand {
                                 .executes(context -> PlayerBatchService.buildTestStructure(context.getSource(), "climb")))
                         .then(Commands.literal("course")
                                 .executes(context -> PlayerBatchService.buildTestStructure(context.getSource(), "course")))
+                        .then(Commands.literal("heal")
+                                .executes(context -> PlayerBatchService.dropHealingTestPack(context.getSource())))
                         .then(Commands.literal("drop")
                                 .then(Commands.argument("item", StringArgumentType.word())
                                         .suggests((context, builder) -> SharedSuggestionProvider.suggest(
