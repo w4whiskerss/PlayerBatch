@@ -1,112 +1,32 @@
 # PlayerBatch
 
-`PlayerBatch` is a Fabric + Carpet addon for Minecraft `1.21.11` that lets you summon, select, group, and control large batches of fake players from commands or a GUI.
+> Bulk-summon, control, and script fake players on Fabric with Carpet.
+
+[![Download on GitHub](https://img.shields.io/badge/Download-GitHub%20Release-2ea44f?style=for-the-badge&logo=github)](https://github.com/w4whiskerss/PlayerBatch/releases/tag/latest-1.21.11)
+[![Modrinth](https://img.shields.io/badge/Download-Modrinth-1bd96a?style=for-the-badge&logo=modrinth)](https://modrinth.com/mod/playerbatch)
+[![ExtAPI](https://img.shields.io/badge/API-PlayerBatch--ExtAPI-5865f2?style=for-the-badge)](https://github.com/w4whiskerss/PlayerBatch-ExtAPI)
+[![Issues](https://img.shields.io/badge/Support-Issues-db61a2?style=for-the-badge&logo=github)](https://github.com/w4whiskerss/PlayerBatch/issues)
+
+`PlayerBatch` is a `Minecraft 1.21.11` Fabric mod and Carpet addon built for summoning and managing large groups of fake players without the normal spam, lag, or command pain.
+
+## Quick Links
+
+- Download latest jar: [GitHub release](https://github.com/w4whiskerss/PlayerBatch/releases/tag/latest-1.21.11)
+- Modrinth page: [PlayerBatch on Modrinth](https://modrinth.com/mod/playerbatch)
+- Extension API: [PlayerBatch-ExtAPI](https://github.com/w4whiskerss/PlayerBatch-ExtAPI)
+- Source code: [GitHub repository](https://github.com/w4whiskerss/PlayerBatch)
+- Report bugs: [Issues](https://github.com/w4whiskerss/PlayerBatch/issues)
 
 ## What It Does
 
-- Summons many fake players at once by reusing Carpet's existing `/player <name> spawn` command
-- Queues large batches safely to reduce lag spikes
-- Shows live summon progress with a boss bar
-- Lets you select fake players with a wand and control them in bulk
-- Tags every PlayerBatch-managed fake player with `bot`
-- Supports named bot groups with shared AI modes
-- Adds a first-pass tick-based AI foundation for managed bots
-- Includes an in-game GUI for quick batch control
-- Supports named summons, fallback names, and generated names when needed
+- Summons lots of fake players using Carpet's real `/player` system
+- Queues large spawns to reduce lag spikes
+- Supports custom names, formations, kits, and combat options
+- Lets you select bots in bulk and control them with commands
+- Adds group control, AI modes, bot utilities, and command-focused workflows
+- Supports extensions through `PlayerBatch-ExtAPI`
 
-## Main Features
-
-- Bulk summoning with `/playersummon <count>`
-- Named summoning with `/playersummon <count> {name1, name2, ...}`
-- Live queue progress and accurate success/fail summary
-- Editable live limits with `/playerbatch limit <number>`
-- Configurable spawn rate with `/playerbatch spawnspertick <number>`
-- Selection wand with glowing selected bots
-- Batch actions for selected fake players
-- Group creation, assignment, removal, and listing
-- AI mode assignment for selected bots or full groups
-- Prompt-aligned tabbed GUI with `Summoning`, `Customization`, and `Debug`
-- `/pb` alias for the core PlayerBatch command tree
-- Optional Mod Menu config entry
-- Debug logging toggle for troubleshooting
-
-## Commands
-
-### Summoning
-
-- `/playersummon <count>`
-- `/playersummon <count> {name1, name2, ...}`
-- `/playerbatch summon <count> {name1, name2, ...}`
-
-### PlayerBatch Menu
-
-- `/playerbatch`
-- `/pb`
-
-Opens the PlayerBatch GUI.
-
-Current GUI tabs:
-
-- `Summoning`
-- `Customization`
-- `Debug`
-
-### Settings
-
-- `/playerbatch limit <number>`
-- `/playerbatch spawnspertick <number>`
-- `/playerbatch debug on`
-- `/playerbatch debug off`
-
-### Selection
-
-- `/playerbatch wand`
-- `/playerbatch clearselection`
-- `/playerbatch listselection`
-- `/playerbatch select all`
-- `/playerbatch select range <distance>`
-- `/playerbatch select count <number>`
-
-### Selected Bot Actions
-
-- `/playerbatch command <action>`
-- `/playerbatch tp type=wand:selected <direction> <blocks>`
-
-### Groups
-
-- `/playerbatch group create <name>`
-- `/playerbatch group assign <name>`
-- `/playerbatch group remove <name>`
-- `/playerbatch group list`
-
-These commands operate on the current PlayerBatch selection and only affect managed bots tagged with `bot`.
-
-### AI Foundation
-
-- `/playerbatch ai set <mode>`
-- `/playerbatch ai set <mode> group <name>`
-- `/playerbatch ai status`
-- `/playerbatch ai status group <name>`
-
-Supported modes right now:
-
-- `idle`
-- `combat`
-- `patrol`
-- `guard`
-- `follow`
-- `flee`
-
-Current AI behavior is intentionally lightweight and server-side:
-
-- `idle` keeps the bot passive
-- `patrol` rotates the bot to simulate patrol scanning
-- `follow` tracks the nearest real player
-- `guard` watches the nearest nearby threat
-- `combat` faces and attacks nearby threats
-- `flee` moves away from nearby threats
-
-## Installation
+## Install
 
 You need:
 
@@ -119,100 +39,95 @@ You need:
 Install steps:
 
 1. Install Fabric Loader for `1.21.11`
-2. Put Fabric API in your `mods` folder
-3. Put Carpet Mod in your `mods` folder
-4. Download the latest `PlayerBatch` jar from the releases page
-5. Put the `PlayerBatch` jar in your `mods` folder
+2. Put `Fabric API` in your `mods` folder
+3. Put `Carpet` in your `mods` folder
+4. Download the latest `PlayerBatch` jar
+5. Put the jar in your `mods` folder
 
-## Config
+## Main Commands
 
-PlayerBatch writes its config to:
+### Summoning
 
-`config/playerbatch.properties`
+```mcfunction
+/playersummon <count>
+/pb summon <count> <names> <formation> <arguments>
+/pb preset combat <count> <arguments>
+```
 
-Current settings:
+### Selection
 
-- `maxSummonCount`
-- `maxSpawnsPerTick`
-- `debugEnabled`
+```mcfunction
+/pb wand
+/pb select all
+/pb select range <distance>
+/pb select count <number>
+/pb clearselection
+/pb listselection
+```
 
-These settings can be changed live in game and are saved automatically.
+### Bot Control
 
-## How Selection Works
+```mcfunction
+/pb command <action>
+/pb look at <player>
+/pb tp type=wand:selected <direction> <block>
+/pb fixtags
+```
 
-1. Run `/playerbatch wand`
-2. Right-click a fake player with the wand
-3. The fake player becomes selected and glows
-4. Right-click again to remove it from selection
-5. Use batch commands on the selected group
+### Kits
 
-Only PlayerBatch-managed fake players tagged with `bot` can be selected and controlled by the current group/AI systems.
+```mcfunction
+/pb kit save <name>
+/pb kit load <name>
+/pb kit self <name>
+/pb kit list
+```
 
-## Groups And AI
+## Example Commands
 
-This release adds the first foundation for the larger bot-control roadmap.
+```mcfunction
+/pb summon 50 {W4Whiskers,PixelCrafter} circle -diamondarmor -diamondtools -reach{6} -damage{true}
+/pb summon 100 {} filled_circle -ironarmor -irontools
+/pb look at W4Whiskers
+/pb fixtags
+```
 
-What is included now:
+## Formations
 
-- Persistent in-memory server state for bot groups
-- Shared AI mode per group
-- Per-bot AI brain state for selected bots
-- Tick-driven AI updates on the server
-- GUI state sync showing live group summaries
-- Tabbed GUI flow that separates summoning, customization, and diagnostics
+Built-in formations currently include:
 
-What this foundation is preparing for next:
+- `circle`
+- `filled_circle`
+- `square`
+- `triangle`
+- `random`
+- `single_block`
 
-- Targeting rules
-- Event triggers
-- Pathfinding
-- Scenario orchestration
-- preset serialization for groups and AI
+## Why Use PlayerBatch
 
-## Name Rules
+- Faster testing for PvP and arena setups
+- Easier fake-player management than raw Carpet commands alone
+- Better large-batch stability
+- Cleaner command workflow
+- Extension-ready for custom formations, arguments, actions, and behaviors
 
-When summoning bots:
+## Extension API
 
-- Given names are used first
-- Extra names are fetched from NameMC when possible
-- If NameMC does not provide enough valid names, PlayerBatch falls back to a built-in pool and generated names
+Want to build add-ons for PlayerBatch?
 
-Requested names must:
-
-- Be between `3` and `16` characters
-- Use valid Minecraft username characters
-- Not start with `MHF_`
-- Look like normal usernames instead of random gibberish
-
-## FAQ
-
-### Does this create fake players by itself?
-
-No. PlayerBatch uses Carpet's fake-player command system instead of reimplementing fake players.
-
-### Does it work on dedicated servers?
-
-Yes. The mod is server-authoritative and is designed to work with dedicated servers.
-
-### Why is summoning queued instead of instant?
-
-Large bot batches can lag or crash a server if they all spawn at once. PlayerBatch spreads work across ticks to keep it stable.
-
-### Can I change the summon limit without restarting?
-
-Yes. Use the GUI or `/playerbatch limit <number>`.
-
-### Do I need Mod Menu?
-
-No. Mod Menu is optional. If you have it installed, PlayerBatch can show a config screen entry there.
-
-## Downloads
-
-Latest builds and the latest `1.21.11` jar are published on GitHub:
-
-- Releases: [GitHub Releases](https://github.com/w4whiskerss/PlayerBatch/releases)
+- API repo: [PlayerBatch-ExtAPI](https://github.com/w4whiskerss/PlayerBatch-ExtAPI)
+- Extension entrypoint key: `playerbatch-ext`
 
 ## Notes
 
-- PlayerBatch targets `Minecraft 1.21.11`
-- The latest GitHub workflow uploads the current `1.21.11` jar automatically
+- `PlayerBatch` is command-first
+- It reuses Carpet fake-player spawning instead of reimplementing fake players
+- The latest `1.21.11` jar is uploaded to GitHub releases whenever a new build is published
+- If the Modrinth page is not live yet, use the GitHub release link above
+
+## Support
+
+If something breaks or acts weird:
+
+- open an issue: [GitHub Issues](https://github.com/w4whiskerss/PlayerBatch/issues)
+- include your version, commands used, and logs if possible
