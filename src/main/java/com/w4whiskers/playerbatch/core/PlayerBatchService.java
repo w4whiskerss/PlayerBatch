@@ -38,11 +38,14 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.food.FoodProperties;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.alchemy.PotionContents;
 import net.minecraft.world.item.alchemy.Potions;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -440,6 +443,16 @@ public final class PlayerBatchService {
             return 0;
         }
         AiResult result = state(source.getServer()).setAllAiModes(modes);
+        if (!result.success()) {
+            source.sendFailure(Component.literal(result.message()));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(result.message()), true);
+        return result.affected();
+    }
+
+    public static int setSelectedCombatMode(CommandSourceStack source, boolean enabled) {
+        AiResult result = state(source.getServer()).setSelectedCombatMode(enabled);
         if (!result.success()) {
             source.sendFailure(Component.literal(result.message()));
             return 0;
@@ -1350,6 +1363,29 @@ public final class PlayerBatchService {
             return AiResult.success("Set AI mode to '" + BotAiMode.displayModes(modes) + "' for all " + players.size() + " managed bot" + suffix(players.size()) + ".", players.size());
         }
 
+        private AiResult setSelectedCombatMode(boolean enabled) {
+            List<EntityPlayerMPFake> players = selectedPlayers();
+            if (players.isEmpty()) {
+                return AiResult.failure("Select one or more managed bots first.");
+            }
+
+            int affected = 0;
+            for (EntityPlayerMPFake player : players) {
+                BotBrain brain = ensureBrain(player);
+                CombatPresetSpec preset = enabled
+                        ? (brain.combatPreset != null ? brain.combatPreset : CombatPresetParser.parse("-combat{true}"))
+                        : null;
+                applyCombatPreset(player, preset);
+                affected++;
+            }
+
+            broadcast(false);
+            return AiResult.success(
+                    (enabled ? "Enabled" : "Disabled") + " combat mode for " + affected + " selected bot" + suffix(affected) + ".",
+                    affected
+            );
+        }
+
         private void applyCombatPreset(EntityPlayerMPFake fakePlayer, CombatPresetSpec combatPreset) {
             BotBrain brain = ensureBrain(fakePlayer);
             brain.combatPreset = combatPreset;
@@ -1359,6 +1395,7 @@ public final class PlayerBatchService {
             brain.flexSpinDirection = 1;
             brain.flexSpinProgress = 0.0F;
             brain.stuckTicks = 0;
+            brain.terrainActionCooldownTicks = 0;
             brain.scriptedUse = null;
             stopActionMovement(fakePlayer, true);
             if (combatPreset != null) {
@@ -1518,6 +1555,9 @@ public final class PlayerBatchService {
             if (brain.attackRetreatTicks > 0) {
                 brain.attackRetreatTicks--;
             }
+            if (brain.terrainActionCooldownTicks > 0) {
+                brain.terrainActionCooldownTicks--;
+            }
             if (brain.flexSpinTicks <= 0 && brain.flexSpinProgress != 0.0F) {
                 brain.flexSpinProgress = 0.0F;
             }
@@ -1539,14 +1579,14 @@ public final class PlayerBatchService {
                     if (desiredPickup != null && isHealingPickup(desiredPickup.getItem())) {
                         prepareInventorySpaceFor(fakePlayer, desiredPickup.getItem(), combatPreset);
                         lookAtTarget(fakePlayer, desiredPickup);
-                        moveTowardTarget(fakePlayer, desiredPickup, 1.0D, 0.95F, false, brain);
+                        moveTowardTarget(fakePlayer, desiredPickup, 1.0D, 0.95F, false, brain, false);
                         return;
                     }
                 }
                 if (desiredPickup != null) {
                     prepareInventorySpaceFor(fakePlayer, desiredPickup.getItem(), combatPreset);
                     lookAtTarget(fakePlayer, desiredPickup);
-                    moveTowardTarget(fakePlayer, desiredPickup, 1.0D, 0.95F, false, brain);
+                    moveTowardTarget(fakePlayer, desiredPickup, 1.0D, 0.95F, false, brain, false);
                     return;
                 }
             }
@@ -1575,7 +1615,7 @@ public final class PlayerBatchService {
                 if (brain.attackRetreatTicks > 0 && combatPreset != null && combatPreset.stapEnabled()) {
                     moveAwayFromThreat(fakePlayer, threat, 1.0F, brain);
                 } else if (horizontalDistance(fakePlayer, threat) > preferredDistance || Math.abs(threat.getY() - fakePlayer.getY()) > 1.25D) {
-                    moveTowardTarget(fakePlayer, threat, preferredDistance, 1.0F, combatPreset != null && combatPreset.stapEnabled(), brain);
+                    moveTowardTarget(fakePlayer, threat, preferredDistance, 1.0F, combatPreset != null && combatPreset.stapEnabled(), brain, true);
                 } else {
                     stopActionMovement(fakePlayer, false);
                     tryAttackTarget(fakePlayer, threat, brain, combatPreset);
@@ -1585,7 +1625,7 @@ public final class PlayerBatchService {
 
             if (modes.contains(BotAiMode.FOLLOW) && followTarget != null) {
                 lookAtTarget(fakePlayer, followTarget);
-                moveTowardTarget(fakePlayer, followTarget, 2.5D, 0.9F, true, brain);
+                moveTowardTarget(fakePlayer, followTarget, 2.5D, 0.9F, true, brain, false);
                 return;
             }
 
@@ -1654,7 +1694,7 @@ public final class PlayerBatchService {
             }
         }
 
-        private void moveTowardTarget(EntityPlayerMPFake source, Entity target, double preferredDistance, float forwardPower, boolean cautiousAtEdges, BotBrain brain) {
+        private void moveTowardTarget(EntityPlayerMPFake source, Entity target, double preferredDistance, float forwardPower, boolean cautiousAtEdges, BotBrain brain, boolean allowTerrainTools) {
             if (target == null) {
                 stopActionMovement(source, false);
                 return;
@@ -1675,6 +1715,9 @@ public final class PlayerBatchService {
 
             EntityPlayerActionPack actionPack = actionPack(source);
             lookAtTarget(source, target);
+            if (allowTerrainTools && target instanceof LivingEntity livingTarget && tryCombatTerrainAdjustment(source, livingTarget, brain)) {
+                return;
+            }
             float desiredForward = Math.max(0.35F, Math.min(1.0F, forwardPower));
             Vec3 motion = horizontal.normalize().scale(Math.max(0.2D, forwardPower));
             boolean shouldJump = shouldJumpTowardTarget(source, target, motion, brain);
@@ -1687,6 +1730,147 @@ public final class PlayerBatchService {
                 actionPack.start(EntityPlayerActionPack.ActionType.JUMP, EntityPlayerActionPack.Action.once());
             }
             updateStuckState(source, brain, true, target);
+        }
+
+        private boolean tryCombatTerrainAdjustment(EntityPlayerMPFake source, LivingEntity target, BotBrain brain) {
+            if (brain.terrainActionCooldownTicks > 0 || source.level() != target.level()) {
+                return false;
+            }
+
+            Direction approach = horizontalDirectionToward(source, target);
+            if (approach == null) {
+                return false;
+            }
+
+            ServerLevel level = (ServerLevel) source.level();
+            BlockPos feet = source.blockPosition();
+            BlockPos frontFeet = feet.relative(approach);
+            BlockPos frontHead = frontFeet.above();
+            BlockPos frontTop = frontHead.above();
+            BlockPos bridgePos = frontFeet.below();
+            double verticalGap = target.getY() - source.getY();
+
+            if (verticalGap > 0.8D && isReplaceable(level.getBlockState(frontFeet)) && hasSolidSupport(level, bridgePos)) {
+                if (tryPlaceCombatBlock(source, frontFeet, brain, "step up")) {
+                    actionPack(source).start(EntityPlayerActionPack.ActionType.JUMP, EntityPlayerActionPack.Action.once());
+                    return true;
+                }
+            }
+
+            if (isReplaceable(level.getBlockState(frontFeet)) && isReplaceable(level.getBlockState(bridgePos))) {
+                if (tryPlaceCombatBlock(source, bridgePos, brain, "bridge gap")) {
+                    return true;
+                }
+            }
+
+            if (isBlockingObstacle(level.getBlockState(frontFeet)) && tryBreakCombatBlock(source, frontFeet, brain, "front wall")) {
+                return true;
+            }
+            if (isBlockingObstacle(level.getBlockState(frontHead)) && tryBreakCombatBlock(source, frontHead, brain, "head wall")) {
+                return true;
+            }
+            if (verticalGap > 1.5D && isBlockingObstacle(level.getBlockState(frontTop)) && tryBreakCombatBlock(source, frontTop, brain, "top wall")) {
+                return true;
+            }
+
+            return false;
+        }
+
+        private Direction horizontalDirectionToward(EntityPlayerMPFake source, Entity target) {
+            Vec3 delta = target.position().subtract(source.position());
+            if (Math.abs(delta.x) < 0.001D && Math.abs(delta.z) < 0.001D) {
+                return null;
+            }
+            return Math.abs(delta.x) >= Math.abs(delta.z)
+                    ? (delta.x >= 0.0D ? Direction.EAST : Direction.WEST)
+                    : (delta.z >= 0.0D ? Direction.SOUTH : Direction.NORTH);
+        }
+
+        private boolean tryBreakCombatBlock(EntityPlayerMPFake source, BlockPos pos, BotBrain brain, String reason) {
+            ServerLevel level = (ServerLevel) source.level();
+            BlockState state = level.getBlockState(pos);
+            if (!canBreakCombatBlock(level, pos, state)) {
+                return false;
+            }
+            boolean broken = level.destroyBlock(pos, true, source);
+            if (!broken) {
+                return false;
+            }
+            brain.terrainActionCooldownTicks = 6;
+            stopActionMovement(source, false);
+            debug("{} broke {} at {} to {}", source.getGameProfile().name(), BuiltInRegistries.BLOCK.getKey(state.getBlock()), pos, reason);
+            return true;
+        }
+
+        private boolean tryPlaceCombatBlock(EntityPlayerMPFake source, BlockPos pos, BotBrain brain, String reason) {
+            ServerLevel level = (ServerLevel) source.level();
+            if (!isReplaceable(level.getBlockState(pos))) {
+                return false;
+            }
+
+            int slot = findCombatBlockSlot(source);
+            if (slot < 0) {
+                return false;
+            }
+
+            ItemStack blockStack = source.getInventory().getItem(slot);
+            if (!(blockStack.getItem() instanceof BlockItem blockItem)) {
+                return false;
+            }
+
+            BlockState placeState = blockItem.getBlock().defaultBlockState();
+            if (placeState.isAir() || !placeState.canSurvive(level, pos) || !level.isUnobstructed(placeState, pos, null)) {
+                return false;
+            }
+
+            boolean placed = level.setBlock(pos, placeState, Block.UPDATE_ALL);
+            if (!placed) {
+                return false;
+            }
+
+            blockStack.shrink(1);
+            if (blockStack.isEmpty()) {
+                source.getInventory().setItem(slot, ItemStack.EMPTY);
+            }
+            brain.terrainActionCooldownTicks = 6;
+            stopActionMovement(source, false);
+            debug("{} placed {} at {} to {}", source.getGameProfile().name(), BuiltInRegistries.BLOCK.getKey(placeState.getBlock()), pos, reason);
+            return true;
+        }
+
+        private int findCombatBlockSlot(EntityPlayerMPFake fakePlayer) {
+            for (int slot = 0; slot < fakePlayer.getInventory().getContainerSize(); slot++) {
+                ItemStack stack = fakePlayer.getInventory().getItem(slot);
+                if (stack.isEmpty() || !(stack.getItem() instanceof BlockItem blockItem)) {
+                    continue;
+                }
+                Block block = blockItem.getBlock();
+                BlockState state = block.defaultBlockState();
+                if (!state.isAir() && state.blocksMotion()) {
+                    return slot;
+                }
+            }
+            return -1;
+        }
+
+        private boolean canBreakCombatBlock(ServerLevel level, BlockPos pos, BlockState state) {
+            if (state.isAir() || state.canBeReplaced() || state.getDestroySpeed(level, pos) < 0.0F) {
+                return false;
+            }
+            return state.blocksMotion();
+        }
+
+        private boolean isBlockingObstacle(BlockState state) {
+            return !state.isAir() && !state.canBeReplaced() && state.blocksMotion();
+        }
+
+        private boolean isReplaceable(BlockState state) {
+            return state.isAir() || state.canBeReplaced();
+        }
+
+        private boolean hasSolidSupport(ServerLevel level, BlockPos pos) {
+            BlockState state = level.getBlockState(pos);
+            return !state.isAir() && !state.canBeReplaced() && state.blocksMotion();
         }
 
         private void stopActionMovement(EntityPlayerMPFake source, boolean stopUse) {
@@ -2891,25 +3075,27 @@ public final class PlayerBatchService {
         }
 
         CombatPresetSpec combatPreset = null;
-        if (!optionTokens.isEmpty()) {
-            List<String> builtinOptionTokens = new ArrayList<>();
-            for (String token : optionTokens) {
-                if (CombatPresetParser.isKnownOptionToken(token)) {
-                    builtinOptionTokens.add(token);
+            if (!optionTokens.isEmpty()) {
+                List<String> builtinOptionTokens = new ArrayList<>();
+                for (String token : optionTokens) {
+                    if (CombatPresetParser.isKnownOptionToken(token)) {
+                        builtinOptionTokens.add(token);
                     continue;
                 }
                 boolean handled = PlayerBatchExtensionManager.applyArgumentToken(token, extensionPlan);
                 if (!handled) {
                     throw new IllegalArgumentException("Unknown summon argument: " + token);
                 }
+                }
+                if (!builtinOptionTokens.isEmpty()) {
+                    String rawOptions = String.join(" ", builtinOptionTokens);
+                    CombatPresetParser.validate(rawOptions);
+                    if (CombatPresetParser.shouldCreatePreset(rawOptions)) {
+                        combatPreset = CombatPresetParser.parse(rawOptions);
+                        loadout = loadout.mergedWith(combatPreset.createLoadout());
+                    }
+                }
             }
-            if (!builtinOptionTokens.isEmpty()) {
-                String rawOptions = String.join(" ", builtinOptionTokens);
-                CombatPresetParser.validate(rawOptions);
-                combatPreset = CombatPresetParser.parse(rawOptions);
-                loadout = loadout.mergedWith(combatPreset.createLoadout());
-            }
-        }
 
         if (!extensionPlan.formationId().isBlank()) {
             formation = extensionPlan.formationId();
@@ -3099,6 +3285,7 @@ public final class PlayerBatchService {
         private int stuckTicks;
         private int unstuckStrafeTicks;
         private float unstuckStrafeDirection = 1.0F;
+        private int terrainActionCooldownTicks;
         private Vec3 lastTrackedPosition;
         private ScriptedUseState scriptedUse;
     }

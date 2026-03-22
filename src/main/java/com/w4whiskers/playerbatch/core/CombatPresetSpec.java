@@ -80,6 +80,7 @@ public record CombatPresetSpec(
 
     private void addHealingItems(BotLoadout loadout) {
         if (!healingItemsEnabled || healingItems.isEmpty()) {
+            addScaffolding(loadout);
             return;
         }
         int nextSlot = nextFreeSlot(loadout);
@@ -89,6 +90,14 @@ public record CombatPresetSpec(
             }
             loadout.inventory().put(nextSlot, healingItem);
             nextSlot++;
+        }
+        addScaffolding(loadout);
+    }
+
+    private void addScaffolding(BotLoadout loadout) {
+        int nextSlot = nextFreeSlot(loadout);
+        if (nextSlot < 36) {
+            loadout.inventory().putIfAbsent(nextSlot, new BotLoadout.StackSpec("minecraft:cobblestone", 64));
         }
     }
 

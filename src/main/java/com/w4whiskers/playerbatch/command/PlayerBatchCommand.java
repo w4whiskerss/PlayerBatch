@@ -198,6 +198,11 @@ public final class PlayerBatchCommand {
                                                         context.getSource(),
                                                         StringArgumentType.getString(context, "name")
                                                 ))))))
+                .then(Commands.literal("combat")
+                        .then(Commands.literal("on")
+                                .executes(context -> PlayerBatchService.setSelectedCombatMode(context.getSource(), true)))
+                        .then(Commands.literal("off")
+                                .executes(context -> PlayerBatchService.setSelectedCombatMode(context.getSource(), false))))
                 .then(Commands.literal("customize")
                         .then(Commands.literal("item")
                                 .then(Commands.argument("slot", StringArgumentType.word())

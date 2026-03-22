@@ -12,6 +12,8 @@ import java.util.Set;
 
 public final class CombatPresetParser {
     public static final List<String> OPTION_SUGGESTIONS = List.of(
+            "-combat{true}",
+            "-combat{false}",
             "-ironarmor",
             "-goldenarmor",
             "-diamondarmor",
@@ -51,6 +53,10 @@ public final class CombatPresetParser {
         for (String token : splitOptions(rawOptions)) {
             String normalized = normalizeOption(token);
             if (normalized.isBlank()) {
+                continue;
+            }
+            if (normalized.startsWith("combat")) {
+                parseBraceBoolean(normalized, true);
                 continue;
             }
             CombatPresetSpec.ArmorTier parsedArmor = CombatPresetSpec.ArmorTier.fromOptionToken(normalized);
@@ -113,10 +119,33 @@ public final class CombatPresetParser {
         );
     }
 
+    public static boolean shouldCreatePreset(String rawOptions) {
+        for (String token : splitOptions(rawOptions)) {
+            String normalized = normalizeOption(token);
+            if (normalized.isBlank()) {
+                continue;
+            }
+            if (normalized.startsWith("combat")) {
+                if (parseBraceBoolean(normalized, true)) {
+                    return true;
+                }
+                continue;
+            }
+            if (optionKey(normalized) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static String validate(String rawOptions) {
         for (String token : splitOptions(rawOptions)) {
             String normalized = normalizeOption(token);
             if (normalized.isBlank()) {
+                continue;
+            }
+            if (normalized.startsWith("combat")) {
+                parseBraceBoolean(normalized, true);
                 continue;
             }
             if (CombatPresetSpec.ArmorTier.fromOptionToken(normalized) != CombatPresetSpec.ArmorTier.NONE) {
@@ -202,6 +231,9 @@ public final class CombatPresetParser {
         }
         if (CombatPresetSpec.ArmorTier.fromOptionToken(normalized) != CombatPresetSpec.ArmorTier.NONE) {
             return "armor";
+        }
+        if (normalized.startsWith("combat")) {
+            return "combat";
         }
         if (CombatPresetSpec.ToolTier.fromOptionToken(normalized) != CombatPresetSpec.ToolTier.NONE) {
             return "tools";
