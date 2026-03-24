@@ -1,9 +1,12 @@
 package com.w4whiskers.playerbatch.compat;
 
 import com.w4whiskers.playerbatch.PlayerBatch;
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.ParseResults;
 import net.minecraft.commands.CommandSourceStack;
 
 import java.lang.reflect.Method;
+import java.util.Arrays;
 
 public final class CommandCompat {
     private CommandCompat() {
@@ -50,18 +53,55 @@ public final class CommandCompat {
     }
 
     public static boolean performPrefixedCommand(CommandSourceStack source, String command) {
+        Object commands = source.getServer().getCommands();
         try {
-            Method method = source.getServer().getCommands().getClass()
-                    .getMethod("performPrefixedCommand", CommandSourceStack.class, String.class);
-            Object result = method.invoke(source.getServer().getCommands(), source, command);
-            if (result instanceof Number number) {
-                return number.intValue() > 0;
-            }
+            Method named = commands.getClass().getMethod("performPrefixedCommand", CommandSourceStack.class, String.class);
+            named.invoke(commands, source, command);
             return true;
+        } catch (ReflectiveOperationException ignored) {
+            // Fall through to signature-based lookup for production runtimes with remapped method names.
+        }
+
+        try {
+            Method compatible = Arrays.stream(commands.getClass().getMethods())
+                    .filter(method -> method.getParameterCount() == 2)
+                    .filter(method -> method.getParameterTypes()[0] == CommandSourceStack.class)
+                    .filter(method -> method.getParameterTypes()[1] == String.class)
+                    .findFirst()
+                    .orElse(null);
+            if (compatible != null) {
+                Object result = compatible.invoke(commands, source, command);
+                if (result instanceof Number number) {
+                    return number.intValue() > 0;
+                }
+                return true;
+            }
         } catch (ReflectiveOperationException exception) {
-            PlayerBatch.LOGGER.error("Failed to execute Carpet command /{}", command, exception);
+            PlayerBatch.LOGGER.error("Failed to invoke compatible command executor for /{}", command, exception);
             return false;
         }
+
+        try {
+            @SuppressWarnings("unchecked")
+            CommandDispatcher<CommandSourceStack> dispatcher =
+                    (CommandDispatcher<CommandSourceStack>) commands.getClass().getMethod("getDispatcher").invoke(commands);
+            ParseResults<CommandSourceStack> parseResults = dispatcher.parse("/" + command, source);
+            Method performCommand = Arrays.stream(commands.getClass().getMethods())
+                    .filter(method -> method.getParameterCount() == 2)
+                    .filter(method -> ParseResults.class.isAssignableFrom(method.getParameterTypes()[0]))
+                    .filter(method -> method.getParameterTypes()[1] == String.class)
+                    .findFirst()
+                    .orElse(null);
+            if (performCommand != null) {
+                performCommand.invoke(commands, parseResults, "/" + command);
+                return true;
+            }
+        } catch (ReflectiveOperationException exception) {
+            PlayerBatch.LOGGER.error("Failed to execute Carpet command /{} via parse fallback", command, exception);
+        }
+
+        PlayerBatch.LOGGER.error("Failed to execute Carpet command /{} because no compatible command runner was found", command);
+        return false;
     }
 }
 
