@@ -1880,6 +1880,9 @@ public final class PlayerBatchService {
             if (combatPreset != null) {
                 manageCombatInventory(fakePlayer, combatPreset);
                 ItemEntity desiredPickup = findDesiredPickup(fakePlayer, combatPreset);
+                boolean urgentThreat = threat != null
+                        && (horizontalDistance(fakePlayer, threat) <= 12.0D
+                        || Math.abs(threat.getY() - fakePlayer.getY()) <= 4.0D);
                 if (brain.healTestActive) {
                     if (!hasLowHealth(fakePlayer) && findBestHealingChoice(fakePlayer) != null) {
                         brain.healTestActive = false;
@@ -1921,7 +1924,7 @@ public final class PlayerBatchService {
                         return;
                     }
                 }
-                if (desiredPickup != null) {
+                if (desiredPickup != null && !urgentThreat) {
                     tracePathing(fakePlayer, brain, desiredPickup, "pickup-upgrade", "move");
                     prepareInventorySpaceFor(fakePlayer, desiredPickup.getItem(), combatPreset);
                     lookAtTarget(fakePlayer, desiredPickup);
@@ -2549,10 +2552,29 @@ public final class PlayerBatchService {
 
         private ItemEntity findDesiredPickup(EntityPlayerMPFake fakePlayer, CombatPresetSpec combatPreset) {
             return fakePlayer.level().getEntitiesOfClass(ItemEntity.class, fakePlayer.getBoundingBox().inflate(20.0D), itemEntity ->
-                            itemEntity.isAlive() && !itemEntity.getItem().isEmpty() && isDesiredPickup(fakePlayer, itemEntity.getItem(), combatPreset))
+                            itemEntity.isAlive()
+                                    && !itemEntity.getItem().isEmpty()
+                                    && isPickupCandidateReachable(fakePlayer, itemEntity)
+                                    && isDesiredPickup(fakePlayer, itemEntity.getItem(), combatPreset))
                     .stream()
                     .min(Comparator.comparingDouble(itemEntity -> pickupCost(fakePlayer, itemEntity)))
                     .orElse(null);
+        }
+
+        private boolean isPickupCandidateReachable(EntityPlayerMPFake fakePlayer, ItemEntity itemEntity) {
+            if (itemEntity.level() != fakePlayer.level()) {
+                return false;
+            }
+            double verticalDelta = Math.abs(itemEntity.getY() - fakePlayer.getY());
+            if (verticalDelta > 6.0D) {
+                return false;
+            }
+            if (itemEntity.getY() <= fakePlayer.level().dimensionType().minY() + 1.0D) {
+                return false;
+            }
+            BlockPos itemPos = itemEntity.blockPosition();
+            ServerLevel level = (ServerLevel) fakePlayer.level();
+            return !isHazardousStep(level, itemPos);
         }
 
         private double pickupCost(EntityPlayerMPFake fakePlayer, ItemEntity itemEntity) {
@@ -2560,12 +2582,15 @@ public final class PlayerBatchService {
             double vertical = Math.abs(itemEntity.getY() - fakePlayer.getY());
             double cost = horizontal + (vertical * 2.0D);
             if (itemEntity.getY() < fakePlayer.getY() - 0.75D) {
-                cost += 1.5D;
+                cost += 3.0D;
+            }
+            if (vertical > 2.5D) {
+                cost += vertical * 3.0D;
             }
             BlockPos itemPos = itemEntity.blockPosition();
             BlockState belowItem = fakePlayer.level().getBlockState(itemPos.below());
             if (belowItem.canBeReplaced() || belowItem.isAir()) {
-                cost += 4.0D;
+                cost += 10.0D;
             }
             return cost;
         }
