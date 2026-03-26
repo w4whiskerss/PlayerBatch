@@ -27,7 +27,7 @@ import java.util.Map;
 import java.util.Set;
 
 public final class PlayerBatchExtensionManager {
-    private static final Set<String> BUILTIN_FORMATIONS = Set.of("circle", "filled circle", "filled_circle", "square", "triangle", "random", "single block", "single_block");
+    private static final Set<String> BUILTIN_FORMATIONS = Set.of("circle", "filled circle", "filled_circle", "dense", "square", "triangle", "random", "single block", "single_block");
     private static final PlayerBatchExtensionManager INSTANCE = new PlayerBatchExtensionManager();
 
     private final Map<String, PlayerBatchFormation> formations = new LinkedHashMap<>();

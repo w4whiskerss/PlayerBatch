@@ -28,6 +28,8 @@ public final class CombatPresetParser {
             "-stap{false}",
             "-damage{true}",
             "-damage{false}",
+            "-crits{true}",
+            "-crits{false}",
             "-360flex{true}",
             "-360flex{false}",
             "-healingitems{false}",
@@ -49,6 +51,7 @@ public final class CombatPresetParser {
         boolean stapEnabled = false;
         boolean damageEnabled = true;
         boolean flex360Enabled = false;
+        boolean critsEnabled = false;
 
         for (String token : splitOptions(rawOptions)) {
             String normalized = normalizeOption(token);
@@ -91,6 +94,10 @@ public final class CombatPresetParser {
                 damageEnabled = parseBraceBoolean(normalized, true);
                 continue;
             }
+            if (normalized.startsWith("crits")) {
+                critsEnabled = parseBraceBoolean(normalized, false);
+                continue;
+            }
             if (normalized.startsWith("360flex")) {
                 flex360Enabled = parseBraceBoolean(normalized, false);
                 continue;
@@ -115,7 +122,8 @@ public final class CombatPresetParser {
                 true,
                 stapEnabled,
                 damageEnabled,
-                flex360Enabled
+                flex360Enabled,
+                critsEnabled
         );
     }
 
@@ -171,6 +179,10 @@ public final class CombatPresetParser {
             }
             if (normalized.startsWith("damage")) {
                 parseBraceBoolean(normalized, true);
+                continue;
+            }
+            if (normalized.startsWith("crits")) {
+                parseBraceBoolean(normalized, false);
                 continue;
             }
             if (normalized.startsWith("360flex")) {
@@ -249,6 +261,9 @@ public final class CombatPresetParser {
         }
         if (normalized.startsWith("damage")) {
             return "damage";
+        }
+        if (normalized.startsWith("crits")) {
+            return "crits";
         }
         if (normalized.startsWith("360flex")) {
             return "360flex";

@@ -18,7 +18,8 @@ public record CombatPresetSpec(
         boolean fakeHitEnabled,
         boolean stapEnabled,
         boolean damageEnabled,
-        boolean flex360Enabled
+        boolean flex360Enabled,
+        boolean critsEnabled
 ) {
     public CombatPresetSpec {
         armorTier = armorTier == null ? ArmorTier.NONE : armorTier;
@@ -80,7 +81,6 @@ public record CombatPresetSpec(
 
     private void addHealingItems(BotLoadout loadout) {
         if (!healingItemsEnabled || healingItems.isEmpty()) {
-            addScaffolding(loadout);
             return;
         }
         int nextSlot = nextFreeSlot(loadout);
@@ -90,14 +90,6 @@ public record CombatPresetSpec(
             }
             loadout.inventory().put(nextSlot, healingItem);
             nextSlot++;
-        }
-        addScaffolding(loadout);
-    }
-
-    private void addScaffolding(BotLoadout loadout) {
-        int nextSlot = nextFreeSlot(loadout);
-        if (nextSlot < 36) {
-            loadout.inventory().putIfAbsent(nextSlot, new BotLoadout.StackSpec("minecraft:cobblestone", 64));
         }
     }
 

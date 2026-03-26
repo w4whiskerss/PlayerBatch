@@ -28,7 +28,7 @@ import java.util.concurrent.CompletableFuture;
 public final class PlayerBatchCommand {
     private static final List<String> DIRECTION_SUGGESTIONS = List.of("up", "below", "north", "south", "east", "west");
     private static final List<String> SLOT_SUGGESTIONS = List.of("head", "chest", "legs", "feet", "mainhand", "offhand");
-    private static final List<String> FORMATION_SUGGESTIONS = List.of("circle", "filled_circle", "square", "triangle", "random", "single_block");
+    private static final List<String> FORMATION_SUGGESTIONS = List.of("circle", "filled_circle", "dense", "square", "triangle", "random", "single_block");
     private static final List<String> AI_MODE_SUGGESTIONS = List.of(
             BotAiMode.IDLE.displayName(),
             BotAiMode.COMBAT.displayName(),
@@ -113,6 +113,27 @@ public final class PlayerBatchCommand {
                 })
                 .then(Commands.literal("wand")
                         .executes(context -> PlayerBatchService.giveSelectionWand(context.getSource())))
+                .then(Commands.literal("cancel")
+                        .executes(context -> PlayerBatchService.cancelBatches(context.getSource())))
+                .then(Commands.literal("selection")
+                        .then(Commands.literal("clear")
+                                .executes(context -> PlayerBatchService.clearSelection(context.getSource())))
+                        .then(Commands.literal("list")
+                                .executes(context -> PlayerBatchService.listSelection(context.getSource())))
+                        .then(Commands.literal("all")
+                                .executes(context -> PlayerBatchService.selectAll(context.getSource())))
+                        .then(Commands.literal("range")
+                                .then(Commands.argument("distance", IntegerArgumentType.integer(1))
+                                        .executes(context -> PlayerBatchService.selectWithinRange(
+                                                context.getSource(),
+                                                IntegerArgumentType.getInteger(context, "distance")
+                                        ))))
+                        .then(Commands.literal("count")
+                                .then(Commands.argument("number", IntegerArgumentType.integer(1))
+                                        .executes(context -> PlayerBatchService.selectClosest(
+                                                context.getSource(),
+                                                IntegerArgumentType.getInteger(context, "number")
+                                        )))))
                 .then(Commands.literal("clearselection")
                         .executes(context -> PlayerBatchService.clearSelection(context.getSource())))
                 .then(Commands.literal("listselection")
@@ -208,6 +229,8 @@ public final class PlayerBatchCommand {
                                 .executes(context -> PlayerBatchService.showTestHelp(context.getSource())))
                         .then(Commands.literal("help")
                                 .executes(context -> PlayerBatchService.showTestHelp(context.getSource())))
+                        .then(Commands.literal("all")
+                                .executes(context -> PlayerBatchService.runFullSystemTest(context.getSource())))
                         .then(Commands.literal("goto")
                                 .then(Commands.literal("coords")
                                         .then(Commands.argument("x", IntegerArgumentType.integer())
@@ -295,7 +318,56 @@ public final class PlayerBatchCommand {
                                                         ))))))
                         .then(Commands.literal("clearEffects")
                                 .executes(context -> PlayerBatchService.clearSelectedEffects(context.getSource()))))
+                .then(Commands.literal("gear")
+                        .then(Commands.literal("item")
+                                .then(Commands.argument("slot", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(SLOT_SUGGESTIONS, builder))
+                                        .then(Commands.argument("item", StringArgumentType.word())
+                                                .suggests((context, builder) -> SharedSuggestionProvider.suggest(
+                                                        BuiltInRegistries.ITEM.keySet().stream().map(Object::toString), builder
+                                                ))
+                                                .executes(context -> PlayerBatchService.applySelectedItem(
+                                                        context.getSource(),
+                                                        StringArgumentType.getString(context, "slot"),
+                                                        StringArgumentType.getString(context, "item"),
+                                                        1
+                                                ))
+                                                .then(Commands.argument("count", IntegerArgumentType.integer(1, 64))
+                                                        .executes(context -> PlayerBatchService.applySelectedItem(
+                                                                context.getSource(),
+                                                                StringArgumentType.getString(context, "slot"),
+                                                                StringArgumentType.getString(context, "item"),
+                                                                IntegerArgumentType.getInteger(context, "count")
+                                                        ))))))
+                        .then(Commands.literal("effect")
+                                .then(Commands.argument("effect", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(
+                                                BuiltInRegistries.MOB_EFFECT.keySet().stream().map(Object::toString), builder
+                                        ))
+                                        .then(Commands.argument("seconds", IntegerArgumentType.integer(1))
+                                                .executes(context -> PlayerBatchService.applySelectedEffect(
+                                                        context.getSource(),
+                                                        StringArgumentType.getString(context, "effect"),
+                                                        IntegerArgumentType.getInteger(context, "seconds"),
+                                                        0
+                                                ))
+                                                .then(Commands.argument("amplifier", IntegerArgumentType.integer(0))
+                                                        .executes(context -> PlayerBatchService.applySelectedEffect(
+                                                                context.getSource(),
+                                                                StringArgumentType.getString(context, "effect"),
+                                                                IntegerArgumentType.getInteger(context, "seconds"),
+                                                                IntegerArgumentType.getInteger(context, "amplifier")
+                                                        ))))))
+                        .then(Commands.literal("clear_effects")
+                                .executes(context -> PlayerBatchService.clearSelectedEffects(context.getSource()))))
                 .then(Commands.literal("command")
+                        .then(Commands.argument("action", StringArgumentType.greedyString())
+                                .suggests((context, builder) -> SharedSuggestionProvider.suggest(allActionSuggestions(), builder))
+                                .executes(context -> PlayerBatchService.runSelectedAction(
+                                        context.getSource(),
+                                        StringArgumentType.getString(context, "action")
+                                ))))
+                .then(Commands.literal("run")
                         .then(Commands.argument("action", StringArgumentType.greedyString())
                                 .suggests((context, builder) -> SharedSuggestionProvider.suggest(allActionSuggestions(), builder))
                                 .executes(context -> PlayerBatchService.runSelectedAction(
@@ -309,8 +381,18 @@ public final class PlayerBatchCommand {
                                                 context.getSource(),
                                                 EntityArgument.getPlayer(context, "player")
                                         )))))
+                .then(Commands.literal("target")
+                        .then(Commands.literal("look")
+                                .then(Commands.argument("player", EntityArgument.player())
+                                        .executes(context -> PlayerBatchService.lookSelectionAt(
+                                                context.getSource(),
+                                                EntityArgument.getPlayer(context, "player")
+                                        )))))
                 .then(Commands.literal("fixtags")
                         .executes(context -> PlayerBatchService.fixBotTags(context.getSource())))
+                .then(Commands.literal("repair")
+                        .then(Commands.literal("tags")
+                                .executes(context -> PlayerBatchService.fixBotTags(context.getSource()))))
                 .then(Commands.literal("tp")
                         .then(Commands.literal("type=wand:selected")
                                 .then(Commands.argument("direction", StringArgumentType.word())
@@ -325,7 +407,23 @@ public final class PlayerBatchCommand {
                                                         StringArgumentType.getString(context, "direction"),
                                                         StringArgumentType.getString(context, "block")
                                                 ))))))
+                .then(Commands.literal("teleport")
+                        .then(Commands.literal("selected")
+                                .then(Commands.argument("direction", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(DIRECTION_SUGGESTIONS, builder))
+                                        .then(Commands.argument("block", StringArgumentType.greedyString())
+                                                .suggests((context, builder) -> SharedSuggestionProvider.suggest(
+                                                        BuiltInRegistries.BLOCK.keySet().stream().map(Object::toString),
+                                                        builder
+                                                ))
+                                                .executes(context -> PlayerBatchService.teleportSelection(
+                                                        context.getSource(),
+                                                        StringArgumentType.getString(context, "direction"),
+                                                        StringArgumentType.getString(context, "block")
+                                                ))))))
                 .then(Commands.literal("summon")
+                        .then(summonArguments()))
+                .then(Commands.literal("spawn")
                         .then(summonArguments()))
                 .then(Commands.literal("preset")
                         .then(Commands.literal("combat")
@@ -355,6 +453,49 @@ public final class PlayerBatchCommand {
                                                                         StringArgumentType.getString(context, "options")
                                                                 )))))))
                         .then(Commands.literal("summon")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(CombatPresetStore.names(), builder))
+                                        .executes(context -> PlayerBatchService.summonSavedCombatPreset(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "name"),
+                                                null
+                                        ))
+                                        .then(Commands.argument("count", IntegerArgumentType.integer(1))
+                                                .executes(context -> PlayerBatchService.summonSavedCombatPreset(
+                                                        context.getSource(),
+                                                        StringArgumentType.getString(context, "name"),
+                                                        IntegerArgumentType.getInteger(context, "count")
+                                                )))))
+                        .then(Commands.literal("list")
+                                .executes(context -> PlayerBatchService.listCombatPresets(context.getSource()))))
+                .then(Commands.literal("presets")
+                        .then(Commands.literal("combat")
+                                .then(Commands.argument("count", IntegerArgumentType.integer(1))
+                                        .executes(context -> PlayerBatchService.summonCombatPreset(
+                                                context.getSource(),
+                                                IntegerArgumentType.getInteger(context, "count"),
+                                                ""
+                                        ))
+                                        .then(Commands.argument("options", StringArgumentType.greedyString())
+                                                .suggests((context, builder) -> suggestCombatPresetOptions(builder))
+                                                .executes(context -> PlayerBatchService.summonCombatPreset(
+                                                        context.getSource(),
+                                                        IntegerArgumentType.getInteger(context, "count"),
+                                                        StringArgumentType.getString(context, "options")
+                                                )))))
+                        .then(Commands.literal("save")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .then(Commands.literal("combat")
+                                                .then(Commands.argument("count", IntegerArgumentType.integer(1))
+                                                        .then(Commands.argument("options", StringArgumentType.greedyString())
+                                                                .suggests((context, builder) -> suggestCombatPresetOptions(builder))
+                                                                .executes(context -> PlayerBatchService.saveCombatPreset(
+                                                                        context.getSource(),
+                                                                        StringArgumentType.getString(context, "name"),
+                                                                        IntegerArgumentType.getInteger(context, "count"),
+                                                                        StringArgumentType.getString(context, "options")
+                                                                )))))))
+                        .then(Commands.literal("use")
                                 .then(Commands.argument("name", StringArgumentType.word())
                                         .suggests((context, builder) -> SharedSuggestionProvider.suggest(CombatPresetStore.names(), builder))
                                         .executes(context -> PlayerBatchService.summonSavedCombatPreset(
@@ -401,12 +542,50 @@ public final class PlayerBatchCommand {
                                     context.getSource().sendSuccess(() -> Component.literal("Saved kits: " + String.join(", ", names)), false);
                                     return names.size();
                                 })))
+                .then(Commands.literal("kits")
+                        .then(Commands.literal("save")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .executes(context -> PlayerBatchService.saveKit(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "name")
+                                        ))))
+                        .then(Commands.literal("load")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(KitStore.names(), builder))
+                                        .executes(context -> PlayerBatchService.loadKit(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "name")
+                                        ))))
+                        .then(Commands.literal("self")
+                                .then(Commands.argument("name", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(KitStore.names(), builder))
+                                        .executes(context -> PlayerBatchService.loadKitSelf(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "name")
+                                        ))))
+                        .then(Commands.literal("list")
+                                .executes(context -> {
+                                    List<String> names = KitStore.names();
+                                    if (names.isEmpty()) {
+                                        context.getSource().sendFailure(Component.literal("No saved kits yet."));
+                                        return 0;
+                                    }
+                                    context.getSource().sendSuccess(() -> Component.literal("Saved kits: " + String.join(", ", names)), false);
+                                    return names.size();
+                                })))
                 .then(Commands.literal("help")
                         .executes(context -> {
-                            context.getSource().sendSuccess(
-                                    () -> Component.literal("Use /playerbatch summon <count> <names> <formation> <arguments>, /playerbatch preset combat ..., or /playersummon <count> {optional,names}."),
-                                    false
-                            );
+                            context.getSource().sendSuccess(() -> Component.literal("PlayerBatch command guide:"), false);
+                            context.getSource().sendSuccess(() -> Component.literal("/pb spawn <count> <setup>  | summon bots"), false);
+                            context.getSource().sendSuccess(() -> Component.literal("/pb selection <all|range|count|list|clear>  | manage selected bots"), false);
+                            context.getSource().sendSuccess(() -> Component.literal("/pb run <action>  | run an action on selected bots"), false);
+                            context.getSource().sendSuccess(() -> Component.literal("/pb gear item/effect/clear_effects  | edit selected bot gear/effects"), false);
+                            context.getSource().sendSuccess(() -> Component.literal("/pb target look <player>  | make selected bots face a player"), false);
+                            context.getSource().sendSuccess(() -> Component.literal("/pb teleport selected <direction> <block>  | move selected bots near blocks"), false);
+                            context.getSource().sendSuccess(() -> Component.literal("/pb presets use <name> [count]  | use a saved combat preset"), false);
+                            context.getSource().sendSuccess(() -> Component.literal("/pb kits load <name>  | load a saved kit onto selected bots"), false);
+                            context.getSource().sendSuccess(() -> Component.literal("/pb test all  | run the full system test"), false);
+                            context.getSource().sendSuccess(() -> Component.literal("Old command names still work too."), false);
                             return 1;
                         }));
     }
@@ -544,6 +723,8 @@ public final class PlayerBatchCommand {
 
     private static List<String> allSummonArgumentSuggestions(String currentInput) {
         java.util.LinkedHashSet<String> suggestions = new java.util.LinkedHashSet<>(CombatPresetParser.suggestOptions(currentInput));
+        suggestions.add("-blocks{cobblestone*64}");
+        suggestions.add("-blocks{oak_planks*32,cobblestone*64}");
         for (PlayerBatchArgument argument : PlayerBatchExtensionManager.arguments()) {
             suggestions.addAll(argument.suggestionExamples());
         }

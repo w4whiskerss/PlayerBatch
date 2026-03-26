@@ -111,6 +111,7 @@ public final class BotConfig {
             properties.setProperty("combatPreset.stapEnabled", Boolean.toString(combatPreset.stapEnabled()));
             properties.setProperty("combatPreset.damageEnabled", Boolean.toString(combatPreset.damageEnabled()));
             properties.setProperty("combatPreset.flex360Enabled", Boolean.toString(combatPreset.flex360Enabled()));
+            properties.setProperty("combatPreset.critsEnabled", Boolean.toString(combatPreset.critsEnabled()));
         }
         try (StringWriter writer = new StringWriter()) {
             properties.store(writer, "PlayerBatch summon config");
@@ -196,7 +197,8 @@ public final class BotConfig {
                     Boolean.parseBoolean(properties.getProperty("combatPreset.fakeHitEnabled", "true")),
                     Boolean.parseBoolean(properties.getProperty("combatPreset.stapEnabled", "false")),
                     Boolean.parseBoolean(properties.getProperty("combatPreset.damageEnabled", "true")),
-                    Boolean.parseBoolean(properties.getProperty("combatPreset.flex360Enabled", "false"))
+                    Boolean.parseBoolean(properties.getProperty("combatPreset.flex360Enabled", "false")),
+                    Boolean.parseBoolean(properties.getProperty("combatPreset.critsEnabled", "false"))
             );
         }
         return new BotConfig(properties.getProperty("formation", "circle"), loadout, distributions, combatPreset, new PlayerBatchSummonPlan());

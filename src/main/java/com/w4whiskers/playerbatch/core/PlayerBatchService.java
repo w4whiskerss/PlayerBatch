@@ -78,6 +78,8 @@ public final class PlayerBatchService {
     private static final String BOT_TAG = "bot";
     private static final int AI_TICK_INTERVAL = 1;
     private static final int FLEX_SPIN_STEPS = 8;
+    private static final int COMBAT_ASSIGNMENT_REFRESH_TICKS = 20;
+    private static final int STUCK_CHAT_COOLDOWN_TICKS = 120;
     private static final String DEFAULT_FORMATION = "circle";
     private static final ConcurrentMap<MinecraftServer, ServerState> SERVER_STATES = new ConcurrentHashMap<>();
     private static final MobEffectInstance SELECTED_GLOWING = new MobEffectInstance(MobEffects.GLOWING, Integer.MAX_VALUE, 0, false, false);
@@ -110,7 +112,7 @@ public final class PlayerBatchService {
 
         String formation = normalizeFormation(config.formation());
         if (formation == null) {
-            source.sendFailure(Component.literal("Unknown formation. Use: circle, square, triangle, random, single block."));
+            source.sendFailure(Component.literal("Unknown formation. Use: circle, dense, square, triangle, random, single block."));
             return 0;
         }
 
@@ -191,14 +193,41 @@ public final class PlayerBatchService {
             player.drop(wand, false);
         }
 
-        source.sendSuccess(() -> Component.literal("Selection wand granted. Right-click fake players to toggle selection."), false);
+        source.sendSuccess(() -> Component.literal("Selection wand granted. Right-click blocks for point A, left-click blocks for point B, or click fake players to toggle selection."), false);
         return 1;
+    }
+
+    public static boolean handleWandPointA(ServerPlayer player, BlockPos pos) {
+        if (player == null || player.createCommandSourceStack().getServer() == null) {
+            return false;
+        }
+        state(player.createCommandSourceStack().getServer()).setAreaSummonPointA(player, pos);
+        return true;
+    }
+
+    public static boolean handleWandPointB(ServerPlayer player, BlockPos pos) {
+        if (player == null || player.createCommandSourceStack().getServer() == null) {
+            return false;
+        }
+        state(player.createCommandSourceStack().getServer()).setAreaSummonPointBAndSummon(player, pos);
+        return true;
     }
 
     public static int clearSelection(CommandSourceStack source) {
         int cleared = state(source.getServer()).clearSelection();
         source.sendSuccess(() -> Component.literal("Cleared " + cleared + " selected bot" + (cleared == 1 ? "" : "s") + "."), true);
         return 1;
+    }
+
+    public static int cancelBatches(CommandSourceStack source) {
+        ServerState state = state(source.getServer());
+        int cancelled = state.cancelQueuedAndActive(source.getPlayer());
+        if (cancelled <= 0) {
+            source.sendFailure(Component.literal("There is no active or queued PlayerBatch summon to cancel."));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Cancelled " + cancelled + " PlayerBatch summon batch" + (cancelled == 1 ? "" : "es") + "."), true);
+        return cancelled;
     }
 
     public static int listSelection(CommandSourceStack source) {
@@ -544,8 +573,24 @@ public final class PlayerBatchService {
         return prepared;
     }
 
+    public static int runFullSystemTest(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.literal("Only players can run the full PlayerBatch system test."));
+            return 0;
+        }
+        TestRunResult result = state(source.getServer()).startFullSystemTest(player);
+        if (!result.success()) {
+            source.sendFailure(Component.literal(result.message()));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(result.message()).withStyle(ChatFormatting.GREEN), true);
+        return 1;
+    }
+
     public static int showTestHelp(CommandSourceStack source) {
         source.sendSuccess(() -> Component.literal("PlayerBatch test commands:"), false);
+        source.sendSuccess(() -> Component.literal("/pb test all"), false);
         source.sendSuccess(() -> Component.literal("/pb test goto coords <x> <y> <z>"), false);
         source.sendSuccess(() -> Component.literal("/pb test goto entity <target>"), false);
         source.sendSuccess(() -> Component.literal("/pb test stop"), false);
@@ -965,6 +1010,11 @@ public final class PlayerBatchService {
         }
     }
 
+    private static final class AreaSummonSelection {
+        private BlockPos pointA;
+        private BlockPos pointB;
+    }
+
     private static final class ServerState {
         private final MinecraftServer server;
         private final Deque<SummonBatch> queue = new ArrayDeque<>();
@@ -972,9 +1022,11 @@ public final class PlayerBatchService {
         private final Set<UUID> subscribers = new LinkedHashSet<>();
         private final Map<String, BotGroup> groups = new LinkedHashMap<>();
         private final Map<UUID, BotBrain> brains = new HashMap<>();
+        private final Map<UUID, AreaSummonSelection> areaSummonSelections = new HashMap<>();
         private final Set<UUID> managedBotIds = new LinkedHashSet<>();
         private final Set<String> managedBotNames = new LinkedHashSet<>();
         private SummonBatch activeBatch;
+        private FullSystemTest fullSystemTest;
         private int syncCooldown;
         private int aiTickCooldown;
 
@@ -1001,6 +1053,83 @@ public final class PlayerBatchService {
             debug("Queued summon batch with {} names using {} formation", uniqueNames.size(), config.formation());
             broadcast(false);
             return uniqueNames.size();
+        }
+
+        private int queueCustomBatch(CommandSourceStack source, List<String> names, BotConfig config, List<SummonBatch.SummonEntry> entries) {
+            if (names.isEmpty() || entries.isEmpty()) {
+                return 0;
+            }
+            List<String> reservedNames = reservedNames();
+            List<String> uniqueNames = new ArrayList<>(names.size());
+            List<SummonBatch.SummonEntry> uniqueEntries = new ArrayList<>(entries.size());
+            for (int index = 0; index < Math.min(names.size(), entries.size()); index++) {
+                String uniqueName = makeUniqueSummonName(names.get(index), reservedNames);
+                uniqueNames.add(uniqueName);
+                reservedNames.add(uniqueName);
+                uniqueEntries.add(entries.get(index).withName(uniqueName));
+            }
+            queue.addLast(new SummonBatch(this, server, source, uniqueNames, config, uniqueEntries));
+            debug("Queued custom summon batch with {} names", uniqueNames.size());
+            broadcast(false);
+            return uniqueNames.size();
+        }
+
+        private void setAreaSummonPointA(ServerPlayer player, BlockPos pos) {
+            areaSummonSelections.computeIfAbsent(player.getUUID(), ignored -> new AreaSummonSelection()).pointA = pos.immutable();
+            player.displayClientMessage(Component.literal("PlayerBatch point A set to " + pos).withStyle(ChatFormatting.AQUA), true);
+        }
+
+        private void setAreaSummonPointBAndSummon(ServerPlayer player, BlockPos pos) {
+            AreaSummonSelection selection = areaSummonSelections.computeIfAbsent(player.getUUID(), ignored -> new AreaSummonSelection());
+            if (selection.pointA == null) {
+                selection.pointA = pos.immutable();
+                player.displayClientMessage(Component.literal("PlayerBatch point A set to " + pos + ". Set point B next.").withStyle(ChatFormatting.AQUA), true);
+                return;
+            }
+
+            selection.pointB = pos.immutable();
+            List<BlockPos> spawnBlocks = enumerateArea(selection.pointA, selection.pointB);
+            int maxCount = PlayerBatchConfig.getMaxSummonCount();
+            if (spawnBlocks.size() > maxCount) {
+                player.displayClientMessage(Component.literal("Area has " + spawnBlocks.size() + " blocks, but the current limit is " + maxCount + ".").withStyle(ChatFormatting.RED), false);
+                return;
+            }
+
+            CommandSourceStack source = player.createCommandSourceStack();
+            source.sendSuccess(() -> Component.literal("Preparing " + spawnBlocks.size() + " bot names for area summon...").withStyle(ChatFormatting.YELLOW), false);
+            NamePlanner.planNamesAsync(spawnBlocks.size(), List.of()).whenComplete((plannedNames, throwable) -> server.execute(() -> {
+                if (throwable != null) {
+                    PlayerBatch.LOGGER.error("Failed to plan names for area summon", throwable);
+                    player.displayClientMessage(Component.literal("Failed to prepare names for area summon.").withStyle(ChatFormatting.RED), false);
+                    return;
+                }
+                List<SummonBatch.SummonEntry> entries = new ArrayList<>(spawnBlocks.size());
+                for (int index = 0; index < Math.min(plannedNames.size(), spawnBlocks.size()); index++) {
+                    entries.add(SummonBatch.SummonEntry.forBlock(plannedNames.get(index), spawnBlocks.get(index)));
+                }
+                int queued = queueCustomBatch(source, plannedNames, BotConfig.empty(), entries);
+                if (queued > 0) {
+                    player.displayClientMessage(Component.literal("Queued " + queued + " area bots from " + selection.pointA + " to " + selection.pointB + ".").withStyle(ChatFormatting.GREEN), false);
+                }
+            }));
+        }
+
+        private List<BlockPos> enumerateArea(BlockPos pointA, BlockPos pointB) {
+            int minX = Math.min(pointA.getX(), pointB.getX());
+            int maxX = Math.max(pointA.getX(), pointB.getX());
+            int minY = Math.min(pointA.getY(), pointB.getY());
+            int maxY = Math.max(pointA.getY(), pointB.getY());
+            int minZ = Math.min(pointA.getZ(), pointB.getZ());
+            int maxZ = Math.max(pointA.getZ(), pointB.getZ());
+            List<BlockPos> positions = new ArrayList<>((maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1));
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    for (int x = minX; x <= maxX; x++) {
+                        positions.add(new BlockPos(x, y, z));
+                    }
+                }
+            }
+            return positions;
         }
 
         private void tick() {
@@ -1038,6 +1167,10 @@ public final class PlayerBatchService {
                 aiTickCooldown = AI_TICK_INTERVAL;
             }
             aiTickCooldown--;
+
+            if (fullSystemTest != null && fullSystemTest.tick()) {
+                fullSystemTest = null;
+            }
         }
 
         private void tagQueuedBots() {
@@ -1660,12 +1793,19 @@ public final class PlayerBatchService {
         private void applyCombatPreset(EntityPlayerMPFake fakePlayer, CombatPresetSpec combatPreset) {
             BotBrain brain = ensureBrain(fakePlayer);
             brain.combatPreset = combatPreset;
+            brain.combatPhase = CombatPhase.ENGAGE;
+            brain.assignedTargetId = null;
+            brain.assignedTargetRefreshTicks = 0;
+            brain.critWindowTicks = 0;
+            brain.stuckChatCooldownTicks = 0;
             brain.healCooldownTicks = 0;
             brain.attackRetreatTicks = 0;
             brain.flexSpinTicks = 0;
             brain.flexSpinDirection = 1;
             brain.flexSpinProgress = 0.0F;
             brain.stuckTicks = 0;
+            brain.bypassCommitTicks = 0;
+            brain.bypassDirection = null;
             brain.terrainActionCooldownTicks = 0;
             resetBreakProgress(fakePlayer, brain);
             brain.scriptedUse = null;
@@ -1725,7 +1865,39 @@ public final class PlayerBatchService {
                 cleanupManagedBot(fakePlayer);
                 forgetManagedBot(fakePlayer);
             }
+            if (player != null) {
+                areaSummonSelections.remove(player.getUUID());
+                if (fullSystemTest != null && fullSystemTest.ownerId.equals(player.getUUID())) {
+                    fullSystemTest.cancel("Player disconnect stopped the PlayerBatch full system test.");
+                    fullSystemTest = null;
+                }
+            }
             broadcast(false);
+        }
+
+        private int cancelQueuedAndActive(ServerPlayer player) {
+            int cancelled = queue.size();
+            for (SummonBatch queuedBatch : queue) {
+                queuedBatch.discard();
+            }
+            queue.clear();
+            if (activeBatch != null) {
+                activeBatch.discard();
+                activeBatch = null;
+                cancelled++;
+            }
+            if (player != null) {
+                areaSummonSelections.remove(player.getUUID());
+            } else {
+                areaSummonSelections.clear();
+            }
+            if (fullSystemTest != null && (player == null || fullSystemTest.ownerId.equals(player.getUUID()))) {
+                fullSystemTest.cancel("Cancelled PlayerBatch full system test.");
+                fullSystemTest = null;
+                cancelled++;
+            }
+            broadcast(false);
+            return cancelled;
         }
 
         private int queueDepth() {
@@ -1765,6 +1937,10 @@ public final class PlayerBatchService {
                 activeBatch.discard();
                 activeBatch = null;
             }
+            if (fullSystemTest != null) {
+                fullSystemTest.cancel("Server shutdown stopped the PlayerBatch full system test.");
+                fullSystemTest = null;
+            }
             stripAllManagedBots();
             for (EntityPlayerMPFake player : selectedPlayers()) {
                 removeSelectionGlow(player);
@@ -1799,6 +1975,79 @@ public final class PlayerBatchService {
             for (BotGroup group : groups.values()) {
                 group.memberIds().removeIf(id -> !liveBots.contains(id));
             }
+        }
+
+        private TestRunResult startFullSystemTest(ServerPlayer player) {
+            if (player == null) {
+                return new TestRunResult(false, "Only players can run the full PlayerBatch system test.");
+            }
+            if (fullSystemTest != null) {
+                return new TestRunResult(false, "A PlayerBatch full system test is already running.");
+            }
+            if (activeBatch != null || !queue.isEmpty()) {
+                return new TestRunResult(false, "PlayerBatch is already summoning. Run /pb cancel first.");
+            }
+            fullSystemTest = new FullSystemTest(player);
+            return new TestRunResult(true, "Started PlayerBatch full system test. Watch chat for pass/fail stages.");
+        }
+
+        private EntityPlayerMPFake findManagedBotByName(String name) {
+            String normalized = normalizePlayerName(name);
+            if (normalized == null) {
+                return null;
+            }
+            for (EntityPlayerMPFake fakePlayer : fakePlayers()) {
+                if (normalized.equals(normalizePlayerName(fakePlayer.getGameProfile().name()))) {
+                    return fakePlayer;
+                }
+            }
+            return null;
+        }
+
+        private BotLoadout createSystemTestLoadout() {
+            BotLoadout loadout = new BotLoadout();
+            loadout.equipment().put(EquipmentSlot.HEAD, new BotLoadout.StackSpec("minecraft:diamond_helmet", 1));
+            loadout.equipment().put(EquipmentSlot.CHEST, new BotLoadout.StackSpec("minecraft:diamond_chestplate", 1));
+            loadout.equipment().put(EquipmentSlot.LEGS, new BotLoadout.StackSpec("minecraft:diamond_leggings", 1));
+            loadout.equipment().put(EquipmentSlot.FEET, new BotLoadout.StackSpec("minecraft:diamond_boots", 1));
+            loadout.equipment().put(EquipmentSlot.MAINHAND, new BotLoadout.StackSpec("minecraft:diamond_sword", 1));
+            loadout.equipment().put(EquipmentSlot.OFFHAND, new BotLoadout.StackSpec("minecraft:shield", 1));
+            loadout.hotbar().put(0, new BotLoadout.StackSpec("minecraft:cobblestone", 64));
+            loadout.hotbar().put(1, new BotLoadout.StackSpec("minecraft:golden_apple", 8));
+            loadout.hotbar().put(2, new BotLoadout.StackSpec("minecraft:splash_potion_of_healing", 4));
+            loadout.hotbar().put(3, new BotLoadout.StackSpec("minecraft:potion_of_regeneration", 2));
+            return loadout;
+        }
+
+        private int countPlaceableBlocks(EntityPlayerMPFake fakePlayer) {
+            int total = 0;
+            for (int slot = 0; slot < fakePlayer.getInventory().getContainerSize(); slot++) {
+                ItemStack stack = fakePlayer.getInventory().getItem(slot);
+                if (!stack.isEmpty() && stack.getItem() instanceof BlockItem) {
+                    total += stack.getCount();
+                }
+            }
+            return total;
+        }
+
+        private boolean hasSystemTestKit(EntityPlayerMPFake fakePlayer) {
+            boolean hasSword = fakePlayer.getMainHandItem().is(Items.DIAMOND_SWORD);
+            boolean hasShield = fakePlayer.getOffhandItem().is(Items.SHIELD);
+            boolean hasHealing = false;
+            boolean hasBlocks = false;
+            for (int slot = 0; slot < fakePlayer.getInventory().getContainerSize(); slot++) {
+                ItemStack stack = fakePlayer.getInventory().getItem(slot);
+                if (stack.isEmpty()) {
+                    continue;
+                }
+                if (stack.is(Items.GOLDEN_APPLE) || stack.is(Items.POTION) || stack.is(Items.SPLASH_POTION) || stack.is(Items.LINGERING_POTION)) {
+                    hasHealing = true;
+                }
+                if (stack.getItem() instanceof BlockItem) {
+                    hasBlocks = true;
+                }
+            }
+            return hasSword && hasShield && hasHealing && hasBlocks;
         }
 
         private BotBrain ensureBrain(EntityPlayerMPFake player) {
@@ -1858,7 +2107,7 @@ public final class PlayerBatchService {
 
             ServerPlayer followTarget = modes.contains(BotAiMode.FOLLOW) ? findNearestPlayerTarget(fakePlayer, -1.0D) : null;
             LivingEntity threat = (modes.contains(BotAiMode.GUARD) || modes.contains(BotAiMode.COMBAT) || modes.contains(BotAiMode.FLEE) || combatPreset != null)
-                    ? findNearestThreat(fakePlayer, 16.0D)
+                    ? resolveCombatThreat(fakePlayer, brain, modes.contains(BotAiMode.COMBAT) || combatPreset != null ? -1.0D : 16.0D)
                     : null;
 
             if (brain.healCooldownTicks > 0) {
@@ -1869,6 +2118,15 @@ public final class PlayerBatchService {
             }
             if (brain.terrainActionCooldownTicks > 0) {
                 brain.terrainActionCooldownTicks--;
+            }
+            if (brain.assignedTargetRefreshTicks > 0) {
+                brain.assignedTargetRefreshTicks--;
+            }
+            if (brain.critWindowTicks > 0) {
+                brain.critWindowTicks--;
+            }
+            if (brain.stuckChatCooldownTicks > 0) {
+                brain.stuckChatCooldownTicks--;
             }
             if (brain.flexSpinTicks <= 0 && brain.flexSpinProgress != 0.0F) {
                 brain.flexSpinProgress = 0.0F;
@@ -1911,10 +2169,13 @@ public final class PlayerBatchService {
                 if (hasLowHealth(fakePlayer)) {
                     HealingChoice healingChoice = findBestHealingChoice(fakePlayer);
                     if (healingChoice != null) {
-                        if (brain.healCooldownTicks <= 0 && beginHealingSequence(fakePlayer, brain, healingChoice, threat != null)) {
+                        if (brain.healCooldownTicks <= 0
+                                && shouldStartHealingNow(fakePlayer, threat, healingChoice)
+                                && beginHealingSequence(fakePlayer, brain, healingChoice, threat != null)) {
                             debug("Started scripted healing for {}", fakePlayer.getGameProfile().name());
+                            brain.combatPhase = CombatPhase.RECOVER;
+                            return;
                         }
-                        return;
                     }
                     if (desiredPickup != null && isHealingPickup(desiredPickup.getItem())) {
                         tracePathing(fakePlayer, brain, desiredPickup, "pickup-heal", "move");
@@ -1945,27 +2206,7 @@ public final class PlayerBatchService {
             }
 
             if (modes.contains(BotAiMode.COMBAT) && threat != null) {
-                if (combatPreset != null && combatPreset.flex360Enabled() && brain.flexSpinTicks > 0) {
-                    tracePathing(fakePlayer, brain, threat, "combat-flex", "spin");
-                    tick360Flex(fakePlayer, threat, brain);
-                    return;
-                }
-                lookAtCombatTarget(fakePlayer, threat, combatPreset);
-                double reach = combatPreset == null ? 3.0D : combatPreset.reach();
-                double preferredDistance = combatPreset != null && combatPreset.stapEnabled()
-                        ? 3.0D
-                        : Math.max(1.6D, reach - 0.25D);
-                if (brain.attackRetreatTicks > 0 && combatPreset != null && combatPreset.stapEnabled()) {
-                    tracePathing(fakePlayer, brain, threat, "combat-stap", "retreat");
-                    moveAwayFromThreat(fakePlayer, threat, 1.0F, brain);
-                } else if (horizontalDistance(fakePlayer, threat) > preferredDistance || Math.abs(threat.getY() - fakePlayer.getY()) > 1.25D) {
-                    tracePathing(fakePlayer, brain, threat, "combat-chase", "move");
-                    moveTowardTarget(fakePlayer, threat, preferredDistance, 1.0F, combatPreset != null && combatPreset.stapEnabled(), brain, true);
-                } else {
-                    tracePathing(fakePlayer, brain, threat, "combat-attack", "swing");
-                    stopActionMovement(fakePlayer, false);
-                    tryAttackTarget(fakePlayer, threat, brain, combatPreset);
-                }
+                tickCombatMode(fakePlayer, brain, threat, combatPreset);
                 return;
             }
 
@@ -2009,7 +2250,9 @@ public final class PlayerBatchService {
             if (approach != null && tryHazardAvoidance(source, brain, approach, BlockPos.containing(targetPos), "goto")) {
                 return;
             }
-            if (approach != null && tryLateralBypass(source, brain, approach, BlockPos.containing(targetPos), "goto-bypass")) {
+            if (approach != null
+                    && !canPathThrough((ServerLevel) source.level(), source.blockPosition().relative(approach))
+                    && tryLateralBypass(source, brain, approach, BlockPos.containing(targetPos), "goto-bypass")) {
                 return;
             }
 
@@ -2050,6 +2293,75 @@ public final class PlayerBatchService {
                     .orElse(null);
         }
 
+        private LivingEntity resolveCombatThreat(EntityPlayerMPFake source, BotBrain brain, double range) {
+            ServerPlayer assignedPlayer = resolveAssignedCombatPlayer(source, brain, range);
+            if (assignedPlayer != null) {
+                return assignedPlayer;
+            }
+            return findNearestThreat(source, range > 0.0D ? range : 24.0D);
+        }
+
+        private ServerPlayer resolveAssignedCombatPlayer(EntityPlayerMPFake source, BotBrain brain, double range) {
+            ServerLevel level = (ServerLevel) source.level();
+            if (brain.assignedTargetId != null && brain.assignedTargetRefreshTicks > 0) {
+                ServerPlayer existing = level.getServer().getPlayerList().getPlayer(brain.assignedTargetId);
+                if (isValidRealPlayerThreat(source, existing, range)) {
+                    return existing;
+                }
+            }
+
+            List<ServerPlayer> realPlayers = server.getPlayerList().getPlayers().stream()
+                    .filter(player -> isValidRealPlayerThreat(source, player, range))
+                    .sorted(Comparator.comparing(player -> player.getUUID().toString()))
+                    .toList();
+            if (realPlayers.isEmpty()) {
+                brain.assignedTargetId = null;
+                brain.assignedTargetRefreshTicks = 0;
+                return null;
+            }
+
+            List<EntityPlayerMPFake> combatBots = fakePlayers().stream()
+                    .filter(bot -> bot.level() == source.level())
+                    .filter(bot -> {
+                        BotBrain otherBrain = ensureBrain(bot);
+                        return otherBrain.combatPreset != null || otherBrain.modes.contains(BotAiMode.COMBAT);
+                    })
+                    .sorted(Comparator.comparing(bot -> bot.getUUID().toString()))
+                    .toList();
+            int botIndex = Math.max(0, combatBots.indexOf(source));
+            ServerPlayer assigned;
+            if (realPlayers.size() == 1) {
+                assigned = realPlayers.getFirst();
+            } else if (realPlayers.size() == 2) {
+                assigned = realPlayers.get(botIndex % 2);
+            } else {
+                List<ServerPlayer> rankedByGear = new ArrayList<>(realPlayers);
+                rankedByGear.sort(Comparator.comparingInt(this::scoreRealPlayerGear).reversed());
+                ServerPlayer priority = rankedByGear.getFirst();
+                List<ServerPlayer> secondaryTargets = rankedByGear.subList(1, rankedByGear.size());
+                int prioritySlots = Math.max(1, (int) Math.ceil(Math.max(1, combatBots.size()) * 0.75D));
+                if (botIndex < prioritySlots) {
+                    assigned = priority;
+                } else {
+                    int secondaryIndex = (botIndex - prioritySlots) % secondaryTargets.size();
+                    assigned = secondaryTargets.get(secondaryIndex);
+                }
+            }
+
+            brain.assignedTargetId = assigned.getUUID();
+            brain.assignedTargetRefreshTicks = COMBAT_ASSIGNMENT_REFRESH_TICKS;
+            return assigned;
+        }
+
+        private boolean isValidRealPlayerThreat(EntityPlayerMPFake source, ServerPlayer player, double range) {
+            return player != null
+                    && player.isAlive()
+                    && !player.getUUID().equals(source.getUUID())
+                    && !(player instanceof EntityPlayerMPFake)
+                    && player.level() == source.level()
+                    && (range <= 0.0D || player.distanceToSqr(source) <= range * range);
+        }
+
         private LivingEntity findNearestThreat(EntityPlayerMPFake source, double range) {
             return source.level().getEntitiesOfClass(LivingEntity.class, source.getBoundingBox().inflate(range), entity ->
                             !entity.getUUID().equals(source.getUUID()) && !(entity instanceof EntityPlayerMPFake managed && managed.getTags().contains(BOT_TAG)))
@@ -2058,15 +2370,31 @@ public final class PlayerBatchService {
                     .orElse(null);
         }
 
+        private int scoreRealPlayerGear(ServerPlayer player) {
+            int score = 0;
+            score += Math.max(0, ArmorEvaluation.forStack(player.getItemBySlot(EquipmentSlot.HEAD), EquipmentSlot.HEAD).materialScore());
+            score += Math.max(0, ArmorEvaluation.forStack(player.getItemBySlot(EquipmentSlot.CHEST), EquipmentSlot.CHEST).materialScore());
+            score += Math.max(0, ArmorEvaluation.forStack(player.getItemBySlot(EquipmentSlot.LEGS), EquipmentSlot.LEGS).materialScore());
+            score += Math.max(0, ArmorEvaluation.forStack(player.getItemBySlot(EquipmentSlot.FEET), EquipmentSlot.FEET).materialScore());
+            score += Math.max(0, WeaponEvaluation.forStack(player.getMainHandItem()).materialScore()) * 2;
+            score += Math.max(0, WeaponEvaluation.forStack(player.getOffhandItem()).typeScore());
+            if (player.getOffhandItem().is(Items.SHIELD)) {
+                score += 3;
+            }
+            return score;
+        }
+
         private void lookAtTarget(EntityPlayerMPFake source, Entity target) {
             if (target == null) {
                 return;
             }
             source.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, target.position().add(0.0D, target.getEyeHeight(), 0.0D));
+            syncVisibleRotation(source);
         }
 
         private void lookAtPosition(EntityPlayerMPFake source, Vec3 targetPos) {
             source.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, targetPos);
+            syncVisibleRotation(source);
         }
 
         private void syncVisibleRotation(EntityPlayerMPFake source) {
@@ -2095,6 +2423,150 @@ public final class PlayerBatchService {
             lookAtTarget(source, target);
             if (combatPreset != null && combatPreset.stapEnabled()) {
                 actionPack(source).turn(0.0F, 6.0F);
+            }
+        }
+
+        private void tickCombatMode(EntityPlayerMPFake source, BotBrain brain, LivingEntity threat, CombatPresetSpec combatPreset) {
+            maybeReportStuck(source, brain);
+            if (combatPreset != null && combatPreset.flex360Enabled() && brain.flexSpinTicks > 0) {
+                brain.combatPhase = CombatPhase.PRESSURE;
+                tracePathing(source, brain, threat, "combat-flex", "spin");
+                tick360Flex(source, threat, brain);
+                return;
+            }
+
+            CombatPhase phase = determineCombatPhase(source, brain, threat);
+            brain.combatPhase = phase;
+            if (phase == CombatPhase.RETREAT || phase == CombatPhase.RECOVER) {
+                tickCombatRetreat(source, brain, threat, combatPreset);
+                return;
+            }
+
+            lookAtCombatTarget(source, threat, combatPreset);
+            double reach = combatPreset == null ? 3.0D : combatPreset.reach();
+            double preferredDistance = combatPreset != null && combatPreset.stapEnabled()
+                    ? 3.0D
+                    : Math.max(1.6D, reach - 0.25D);
+            if (brain.attackRetreatTicks > 0 && combatPreset != null && combatPreset.stapEnabled()) {
+                tracePathing(source, brain, threat, "combat-stap", "retreat");
+                moveAwayFromThreat(source, threat, 1.0F, brain);
+            } else if (horizontalDistance(source, threat) > preferredDistance || Math.abs(threat.getY() - source.getY()) > 1.25D) {
+                tracePathing(source, brain, threat, phase == CombatPhase.ENGAGE ? "combat-engage" : "combat-chase", "move");
+                moveTowardTarget(source, threat, preferredDistance, 1.0F, combatPreset != null && combatPreset.stapEnabled(), brain, true);
+            } else {
+                tracePathing(source, brain, threat, "combat-attack", "swing");
+                stopActionMovement(source, false);
+                tryAttackTarget(source, threat, brain, combatPreset);
+            }
+        }
+
+        private CombatPhase determineCombatPhase(EntityPlayerMPFake source, BotBrain brain, LivingEntity threat) {
+            if (brain.scriptedUse != null) {
+                return CombatPhase.RECOVER;
+            }
+            if (hasLowHealth(source)) {
+                return CombatPhase.RETREAT;
+            }
+            if (threat == null) {
+                return CombatPhase.ENGAGE;
+            }
+            return horizontalDistance(source, threat) > 4.5D ? CombatPhase.ENGAGE : CombatPhase.PRESSURE;
+        }
+
+        private void tickCombatRetreat(EntityPlayerMPFake source, BotBrain brain, LivingEntity threat, CombatPresetSpec combatPreset) {
+            equipShieldIfAvailable(source);
+            if (threat == null) {
+                tracePathing(source, brain, null, "combat-recover", "create-space");
+                stopActionMovement(source, false);
+                return;
+            }
+
+            double threatDistance = horizontalDistance(source, threat);
+            if (tryCreateEmergencyCover(source, threat, brain)) {
+                tracePathing(source, brain, threat, "combat-cover", "hold");
+                return;
+            }
+
+            if (threatDistance < 5.0D) {
+                tracePathing(source, brain, threat, "combat-retreat", "shield-backout");
+                if (source.getOffhandItem().is(Items.SHIELD)) {
+                    actionPack(source).start(EntityPlayerActionPack.ActionType.USE, EntityPlayerActionPack.Action.continuous());
+                }
+                moveAwayFromThreat(source, threat, 0.85F, brain);
+                return;
+            }
+
+            actionPack(source).start(EntityPlayerActionPack.ActionType.USE, null);
+            tracePathing(source, brain, threat, "combat-retreat", "reset-distance");
+            moveAwayFromThreat(source, threat, combatPreset != null && combatPreset.stapEnabled() ? 1.0F : 0.75F, brain);
+        }
+
+        private boolean shouldStartHealingNow(EntityPlayerMPFake fakePlayer, LivingEntity threat, HealingChoice healingChoice) {
+            if (healingChoice == null) {
+                return false;
+            }
+            if (threat == null) {
+                return true;
+            }
+            double distance = horizontalDistance(fakePlayer, threat);
+            return switch (healingChoice.kind()) {
+                case POTION -> distance >= 4.0D;
+                case FOOD -> distance >= 8.0D;
+            };
+        }
+
+        private void equipShieldIfAvailable(EntityPlayerMPFake fakePlayer) {
+            if (fakePlayer.getOffhandItem().is(Items.SHIELD)) {
+                return;
+            }
+            int shieldSlot = findInventoryItemSlot(fakePlayer, stack -> stack.is(Items.SHIELD));
+            if (shieldSlot >= 0) {
+                swapIntoOffhand(fakePlayer, shieldSlot);
+            }
+        }
+
+        private int findInventoryItemSlot(EntityPlayerMPFake fakePlayer, java.util.function.Predicate<ItemStack> predicate) {
+            for (int slot = 0; slot < fakePlayer.getInventory().getContainerSize(); slot++) {
+                ItemStack stack = fakePlayer.getInventory().getItem(slot);
+                if (!stack.isEmpty() && predicate.test(stack)) {
+                    return slot;
+                }
+            }
+            return -1;
+        }
+
+        private void swapIntoOffhand(EntityPlayerMPFake fakePlayer, int slot) {
+            ItemStack selected = fakePlayer.getInventory().getItem(slot).copy();
+            ItemStack offhand = fakePlayer.getOffhandItem().copy();
+            fakePlayer.getInventory().setItem(slot, offhand);
+            fakePlayer.setItemSlot(EquipmentSlot.OFFHAND, selected);
+        }
+
+        private boolean tryCreateEmergencyCover(EntityPlayerMPFake source, LivingEntity threat, BotBrain brain) {
+            BlockPos feet = source.blockPosition();
+            Direction towardThreat = horizontalDirectionToward(source, threat);
+            if (towardThreat == null) {
+                return false;
+            }
+            BlockPos front = feet.relative(towardThreat);
+            if (horizontalDistance(source, threat) <= 3.0D && tryPlaceCombatBlock(source, front, brain, "emergency cover")) {
+                return true;
+            }
+            if (brain.stuckTicks >= 14) {
+                BlockPos side = feet.relative(towardThreat.getClockWise());
+                if (tryPlaceCombatBlock(source, side, brain, "side cover")) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private void maybeReportStuck(EntityPlayerMPFake source, BotBrain brain) {
+            if (brain.stuckTicks < 80 || brain.stuckChatCooldownTicks > 0) {
+                return;
+            }
+            if (CommandCompat.performPrefixedCommand(source.createCommandSourceStack(), "say BRO AM STUCK HELP")) {
+                brain.stuckChatCooldownTicks = STUCK_CHAT_COOLDOWN_TICKS;
             }
         }
 
@@ -2139,7 +2611,9 @@ public final class PlayerBatchService {
             if (approach != null && tryHazardAvoidance(source, brain, approach, target.blockPosition(), "target")) {
                 return;
             }
-            if (approach != null && tryLateralBypass(source, brain, approach, target.blockPosition(), "target-bypass")) {
+            if (approach != null
+                    && !canPathThrough((ServerLevel) source.level(), source.blockPosition().relative(approach))
+                    && tryLateralBypass(source, brain, approach, target.blockPosition(), "target-bypass")) {
                 return;
             }
             float desiredForward = Math.max(0.35F, Math.min(1.0F, forwardPower));
@@ -2181,14 +2655,16 @@ public final class PlayerBatchService {
                 return false;
             }
 
-            if (verticalGap > 0.8D && isReplaceable(level.getBlockState(frontFeet)) && hasSolidSupport(level, bridgePos)) {
+            if (verticalGap > 1.4D && isReplaceable(level.getBlockState(frontFeet)) && hasSolidSupport(level, bridgePos)) {
                 if (tryPlaceCombatBlock(source, frontFeet, brain, "step up")) {
                     actionPack(source).start(EntityPlayerActionPack.ActionType.JUMP, EntityPlayerActionPack.Action.once());
                     return true;
                 }
             }
 
-            if (isReplaceable(level.getBlockState(frontFeet)) && isReplaceable(level.getBlockState(bridgePos))) {
+            if (!canJumpAcrossSingleGap(source, horizontalMotionFor(source, approach))
+                    && isReplaceable(level.getBlockState(frontFeet))
+                    && isReplaceable(level.getBlockState(bridgePos))) {
                 if (tryPlaceCombatBlock(source, bridgePos, brain, "bridge gap")) {
                     return true;
                 }
@@ -2232,14 +2708,16 @@ public final class PlayerBatchService {
                 return false;
             }
 
-            if (verticalGap > 0.8D && isReplaceable(level.getBlockState(frontFeet)) && hasSolidSupport(level, bridgePos)) {
+            if (verticalGap > 1.4D && isReplaceable(level.getBlockState(frontFeet)) && hasSolidSupport(level, bridgePos)) {
                 if (tryPlaceCombatBlock(source, frontFeet, brain, "step up")) {
                     actionPack(source).start(EntityPlayerActionPack.ActionType.JUMP, EntityPlayerActionPack.Action.once());
                     return true;
                 }
             }
 
-            if (isReplaceable(level.getBlockState(frontFeet)) && isReplaceable(level.getBlockState(bridgePos))) {
+            if (!canJumpAcrossSingleGap(source, horizontalMotionFor(source, approach))
+                    && isReplaceable(level.getBlockState(frontFeet))
+                    && isReplaceable(level.getBlockState(bridgePos))) {
                 if (tryPlaceCombatBlock(source, bridgePos, brain, "bridge gap")) {
                     return true;
                 }
@@ -2281,6 +2759,10 @@ public final class PlayerBatchService {
                 return dx >= 0 ? Direction.EAST : Direction.WEST;
             }
             return dz >= 0 ? Direction.SOUTH : Direction.NORTH;
+        }
+
+        private Vec3 horizontalMotionFor(EntityPlayerMPFake source, Direction direction) {
+            return new Vec3(direction.getStepX(), 0.0D, direction.getStepZ());
         }
 
         private boolean tryBreakCombatBlock(EntityPlayerMPFake source, BlockPos pos, BotBrain brain, String reason) {
@@ -2452,6 +2934,16 @@ public final class PlayerBatchService {
             BlockPos feet = source.blockPosition();
             Direction bestDirection = null;
             double bestDistance = Double.MAX_VALUE;
+            if (brain.bypassCommitTicks > 0 && brain.bypassDirection != null) {
+                BlockPos committedFeet = feet.relative(brain.bypassDirection);
+                if (canPathThrough(level, committedFeet)) {
+                    bestDirection = brain.bypassDirection;
+                    bestDistance = committedFeet.distSqr(targetPos);
+                } else {
+                    brain.bypassCommitTicks = 0;
+                    brain.bypassDirection = null;
+                }
+            }
             for (Direction side : List.of(approach.getClockWise(), approach.getCounterClockWise())) {
                 BlockPos sideFeet = feet.relative(side);
                 if (!canPathThrough(level, sideFeet)) {
@@ -2467,6 +2959,8 @@ public final class PlayerBatchService {
                 return false;
             }
 
+            brain.bypassDirection = bestDirection;
+            brain.bypassCommitTicks = Math.max(brain.bypassCommitTicks, 6);
             Vec3 sideTarget = Vec3.atBottomCenterOf(feet.relative(bestDirection));
             lookAtPosition(source, sideTarget);
             EntityPlayerActionPack actionPack = actionPack(source);
@@ -2541,7 +3035,7 @@ public final class PlayerBatchService {
         }
 
         private boolean hasLowHealth(EntityPlayerMPFake fakePlayer) {
-            return fakePlayer.getMaxHealth() > 0.0F && (fakePlayer.getHealth() / fakePlayer.getMaxHealth()) <= 0.45F;
+            return fakePlayer.getMaxHealth() > 0.0F && (fakePlayer.getHealth() / fakePlayer.getMaxHealth()) <= 0.35F;
         }
 
         private void manageCombatInventory(EntityPlayerMPFake fakePlayer, CombatPresetSpec combatPreset) {
@@ -2972,6 +3466,17 @@ public final class PlayerBatchService {
             if (source.getAttackStrengthScale(0.5F) < 0.92F) {
                 return;
             }
+            if (combatPreset != null && combatPreset.critsEnabled()) {
+                if (source.onGround() && brain.critWindowTicks <= 0 && canAttemptCrit(source, target)) {
+                    actionPack(source).start(EntityPlayerActionPack.ActionType.JUMP, EntityPlayerActionPack.Action.once());
+                    brain.critWindowTicks = 6;
+                    tracePathing(source, brain, target, "combat-crit", "jump");
+                    return;
+                }
+                if (brain.critWindowTicks > 0 && source.onGround()) {
+                    return;
+                }
+            }
             source.swing(InteractionHand.MAIN_HAND, true);
             if (combatPreset != null && !combatPreset.damageEnabled()) {
                 applyFakeHit(source, target);
@@ -2986,6 +3491,17 @@ public final class PlayerBatchService {
             if (combatPreset != null && combatPreset.flex360Enabled()) {
                 brain.flexSpinTicks = FLEX_SPIN_STEPS;
             }
+            brain.critWindowTicks = 0;
+        }
+
+        private boolean canAttemptCrit(EntityPlayerMPFake source, LivingEntity target) {
+            if (source.isInWater() || source.onClimbable() || source.isPassenger()) {
+                return false;
+            }
+            if (Math.abs(target.getY() - source.getY()) > 1.2D) {
+                return false;
+            }
+            return horizontalDistance(source, target) <= 2.8D;
         }
 
         private void applyFakeHit(EntityPlayerMPFake source, LivingEntity target) {
@@ -3005,6 +3521,9 @@ public final class PlayerBatchService {
             if (stepBlocked) {
                 return true;
             }
+            if (canJumpAcrossSingleGap(source, motion)) {
+                return true;
+            }
             if (target.getY() > source.getY() + 0.75D && hasSolidSupport((ServerLevel) source.level(), stepPos) && isReplaceable(source.level().getBlockState(stepPos.above()))) {
                 return true;
             }
@@ -3018,10 +3537,30 @@ public final class PlayerBatchService {
             if (stepBlocked) {
                 return true;
             }
+            if (canJumpAcrossSingleGap(source, motion)) {
+                return true;
+            }
             if (targetPos.y > source.getY() + 0.75D && hasSolidSupport((ServerLevel) source.level(), stepPos) && isReplaceable(source.level().getBlockState(stepPos.above()))) {
                 return true;
             }
             return brain.stuckTicks >= 10;
+        }
+
+        private boolean canJumpAcrossSingleGap(EntityPlayerMPFake source, Vec3 motion) {
+            if (motion.lengthSqr() < 0.0001D) {
+                return false;
+            }
+            ServerLevel level = (ServerLevel) source.level();
+            BlockPos frontFeet = BlockPos.containing(source.getX() + motion.x * 1.2D, source.getY(), source.getZ() + motion.z * 1.2D);
+            BlockPos landingFeet = BlockPos.containing(source.getX() + motion.x * 2.2D, source.getY(), source.getZ() + motion.z * 2.2D);
+            BlockPos frontBelow = frontFeet.below();
+            BlockPos landingBelow = landingFeet.below();
+            return isReplaceable(level.getBlockState(frontFeet))
+                    && isReplaceable(level.getBlockState(frontFeet.above()))
+                    && level.getBlockState(frontBelow).isAir()
+                    && hasSolidSupport(level, landingBelow)
+                    && isReplaceable(level.getBlockState(landingFeet))
+                    && isReplaceable(level.getBlockState(landingFeet.above()));
         }
 
         private boolean shouldSneakTowardTarget(EntityPlayerMPFake source, Entity target, Vec3 motion) {
@@ -3044,6 +3583,8 @@ public final class PlayerBatchService {
             if (!wantsMovement) {
                 brain.stuckTicks = 0;
                 brain.unstuckStrafeTicks = 0;
+                brain.bypassCommitTicks = 0;
+                brain.bypassDirection = null;
                 brain.lastTrackedPosition = source.position();
                 return;
             }
@@ -3060,6 +3601,11 @@ public final class PlayerBatchService {
                 if (target != null) {
                     lookAtTarget(source, target);
                 }
+            }
+            if (brain.bypassCommitTicks > 0) {
+                brain.bypassCommitTicks--;
+            } else {
+                brain.bypassDirection = null;
             }
             brain.lastTrackedPosition = source.position();
         }
@@ -3135,6 +3681,242 @@ public final class PlayerBatchService {
             }
             return target.getType().toShortString() + "@" + target.blockPosition();
         }
+
+        private final class FullSystemTest {
+            private static final int SPAWN_TIMEOUT_TICKS = 160;
+            private static final int HEAL_TIMEOUT_TICKS = 240;
+            private static final int PILLAR_TIMEOUT_TICKS = 240;
+
+            private final UUID ownerId;
+            private final String botName;
+            private final Direction facing;
+            private final Direction right;
+            private final BlockPos botStart;
+            private final BlockPos playerGround;
+            private final BlockPos playerTower;
+            private final int expectedTowerY;
+            private Stage stage = Stage.WAIT_FOR_SPAWN;
+            private int stageTicks;
+            private UUID botId;
+            private float healStartHealth;
+            private boolean sawHealingUse;
+            private int startingBlockCount;
+            private double startingBotY;
+
+            private FullSystemTest(ServerPlayer owner) {
+                this.ownerId = owner.getUUID();
+                this.facing = cardinalFacing(owner);
+                this.right = facing.getClockWise();
+                this.botName = makeUniqueSummonName("PBTest", reservedNames());
+                this.botStart = owner.blockPosition().relative(facing, 8);
+                this.playerGround = botStart.relative(facing, 8);
+                this.playerTower = botStart.relative(facing, 4).above(5);
+                this.expectedTowerY = playerTower.getY();
+                prepareArena(owner);
+                queueBot(owner);
+                message(ChatFormatting.YELLOW, "Full system test: spawning " + botName + " with the built-in test kit.");
+            }
+
+            private boolean tick() {
+                ServerPlayer owner = owner();
+                if (owner == null) {
+                    return true;
+                }
+                EntityPlayerMPFake bot = bot();
+                stageTicks++;
+                return switch (stage) {
+                    case WAIT_FOR_SPAWN -> tickWaitForSpawn(bot);
+                    case WAIT_FOR_LOADOUT -> tickWaitForLoadout(bot);
+                    case START_HEAL -> tickStartHeal(owner, bot);
+                    case WAIT_FOR_HEAL -> tickWaitForHeal(bot);
+                    case START_PILLAR -> tickStartPillar(owner, bot);
+                    case WAIT_FOR_PILLAR -> tickWaitForPillar(bot);
+                    case COMPLETE, FAILED -> true;
+                };
+            }
+
+            private boolean tickWaitForSpawn(EntityPlayerMPFake bot) {
+                if (bot != null) {
+                    botId = bot.getUUID();
+                    stage = Stage.WAIT_FOR_LOADOUT;
+                    stageTicks = 0;
+                    message(ChatFormatting.GREEN, "Summon check passed: " + botName + " is live.");
+                    return false;
+                }
+                if (stageTicks > SPAWN_TIMEOUT_TICKS) {
+                    fail("Summon check failed: " + botName + " never spawned.");
+                    return true;
+                }
+                return false;
+            }
+
+            private boolean tickWaitForLoadout(EntityPlayerMPFake bot) {
+                if (bot == null) {
+                    fail("Loadout check failed: the test bot disappeared.");
+                    return true;
+                }
+                if (hasSystemTestKit(bot)) {
+                    stage = Stage.START_HEAL;
+                    stageTicks = 0;
+                    message(ChatFormatting.GREEN, "Loadout check passed: sword, shield, healing, and blocks are equipped.");
+                    return false;
+                }
+                if (stageTicks > 80) {
+                    fail("Loadout check failed: the test bot never received the expected kit.");
+                    return true;
+                }
+                return false;
+            }
+
+            private boolean tickStartHeal(ServerPlayer owner, EntityPlayerMPFake bot) {
+                if (bot == null) {
+                    fail("Healing check failed: the test bot disappeared before the heal stage.");
+                    return true;
+                }
+                ServerLevel level = (ServerLevel) owner.level();
+                owner.teleportTo(level, playerGround.getX() + 0.5D, playerGround.getY() + 1.0D, playerGround.getZ() + 0.5D, Set.of(), facing.toYRot(), 0.0F, true);
+                bot.teleportTo(level, botStart.getX() + 0.5D, botStart.getY() + 1.0D, botStart.getZ() + 0.5D, Set.of(), facing.toYRot(), 0.0F, true);
+                bot.clearFire();
+                bot.fallDistance = 0.0F;
+                bot.setDeltaMovement(Vec3.ZERO);
+                bot.getFoodData().setFoodLevel(20);
+                bot.setHealth(Math.max(4.0F, bot.getMaxHealth() * 0.30F));
+                BotBrain brain = ensureBrain(bot);
+                brain.healCooldownTicks = 0;
+                brain.scriptedUse = null;
+                brain.gotoActive = false;
+                brain.gotoTargetEntityId = null;
+                brain.gotoTargetPosition = null;
+                healStartHealth = bot.getHealth();
+                sawHealingUse = false;
+                stage = Stage.WAIT_FOR_HEAL;
+                stageTicks = 0;
+                message(ChatFormatting.YELLOW, "Healing check: damaged the bot and moved the player into threat range.");
+                return false;
+            }
+
+            private boolean tickWaitForHeal(EntityPlayerMPFake bot) {
+                if (bot == null) {
+                    fail("Healing check failed: the test bot disappeared.");
+                    return true;
+                }
+                BotBrain brain = ensureBrain(bot);
+                if (brain.scriptedUse != null || bot.isUsingItem()) {
+                    sawHealingUse = true;
+                }
+                if (sawHealingUse && bot.getHealth() >= Math.min(bot.getMaxHealth(), healStartHealth + 4.0F)) {
+                    message(ChatFormatting.GREEN, "Healing check passed: the bot backed off and healed.");
+                    stage = Stage.START_PILLAR;
+                    stageTicks = 0;
+                    return false;
+                }
+                if (stageTicks > HEAL_TIMEOUT_TICKS) {
+                    fail("Healing check failed: the bot never completed a visible heal.");
+                    return true;
+                }
+                return false;
+            }
+
+            private boolean tickStartPillar(ServerPlayer owner, EntityPlayerMPFake bot) {
+                if (bot == null) {
+                    fail("Pillar check failed: the test bot disappeared before the vertical chase stage.");
+                    return true;
+                }
+                ServerLevel level = (ServerLevel) owner.level();
+                fillBox(level, playerTower.relative(right, -1).below(), playerTower.relative(right, 1).below(), Blocks.SMOOTH_STONE.defaultBlockState());
+                clearBox(level, playerTower.relative(right, -2), playerTower.relative(right, 2).above(2));
+                owner.teleportTo(level, playerTower.getX() + 0.5D, playerTower.getY() + 1.0D, playerTower.getZ() + 0.5D, Set.of(), facing.toYRot(), 0.0F, true);
+                bot.setHealth(bot.getMaxHealth());
+                bot.clearFire();
+                bot.fallDistance = 0.0F;
+                bot.setDeltaMovement(Vec3.ZERO);
+                startingBlockCount = countPlaceableBlocks(bot);
+                startingBotY = bot.getY();
+                stage = Stage.WAIT_FOR_PILLAR;
+                stageTicks = 0;
+                message(ChatFormatting.YELLOW, "Vertical check: moved the player to high ground and waiting for the bot to build up.");
+                return false;
+            }
+
+            private boolean tickWaitForPillar(EntityPlayerMPFake bot) {
+                if (bot == null) {
+                    fail("Pillar check failed: the test bot disappeared.");
+                    return true;
+                }
+                int currentBlocks = countPlaceableBlocks(bot);
+                boolean spentBlocks = currentBlocks < startingBlockCount;
+                boolean gainedHeight = bot.getY() >= startingBotY + 1.5D;
+                boolean reachedTower = bot.getBlockY() >= expectedTowerY - 1;
+                if ((spentBlocks && gainedHeight) || reachedTower) {
+                    complete("Full system test passed: summon, kit, healing, and vertical chase all worked.");
+                    return true;
+                }
+                if (stageTicks > PILLAR_TIMEOUT_TICKS) {
+                    fail("Pillar check failed: the bot never spent blocks to climb toward the elevated player.");
+                    return true;
+                }
+                return false;
+            }
+
+            private void queueBot(ServerPlayer owner) {
+                CombatPresetSpec preset = CombatPresetParser.parse("-combat{true} -damage{false} -crits{true} -healingitems{true}");
+                BotConfig config = new BotConfig("single_block", createSystemTestLoadout(), preset);
+                queueBatch(owner.createCommandSourceStack(), List.of(botName), config);
+            }
+
+            private void prepareArena(ServerPlayer owner) {
+                ServerLevel level = (ServerLevel) owner.level();
+                fillBox(level, botStart.relative(right, -3).below(), playerGround.relative(right, 3).below(), Blocks.SMOOTH_STONE.defaultBlockState());
+                clearBox(level, botStart.relative(right, -4), playerGround.relative(right, 4).above(8));
+                fillBox(level, playerTower.relative(right, -1).below(), playerTower.relative(right, 1).below(), Blocks.SMOOTH_STONE.defaultBlockState());
+            }
+
+            private ServerPlayer owner() {
+                return server.getPlayerList().getPlayer(ownerId);
+            }
+
+            private EntityPlayerMPFake bot() {
+                if (botId != null) {
+                    ServerPlayer player = server.getPlayerList().getPlayer(botId);
+                    if (player instanceof EntityPlayerMPFake fakePlayer) {
+                        return fakePlayer;
+                    }
+                }
+                return findManagedBotByName(botName);
+            }
+
+            private void message(ChatFormatting color, String text) {
+                ServerPlayer owner = owner();
+                if (owner != null) {
+                    owner.displayClientMessage(Component.literal(text).withStyle(color), false);
+                }
+            }
+
+            private void fail(String reason) {
+                stage = Stage.FAILED;
+                message(ChatFormatting.RED, reason);
+            }
+
+            private void complete(String summary) {
+                stage = Stage.COMPLETE;
+                message(ChatFormatting.GREEN, summary);
+            }
+
+            private void cancel(String message) {
+                message(ChatFormatting.GOLD, message);
+            }
+
+            private enum Stage {
+                WAIT_FOR_SPAWN,
+                WAIT_FOR_LOADOUT,
+                START_HEAL,
+                WAIT_FOR_HEAL,
+                START_PILLAR,
+                WAIT_FOR_PILLAR,
+                COMPLETE,
+                FAILED
+            }
+        }
     }
 
     private static final class SummonBatch {
@@ -3173,6 +3955,29 @@ public final class PlayerBatchService {
                     .collect(LinkedHashSet::new, Set::add, Set::addAll);
             this.plannedConfigs = buildPlannedConfigs(names, config);
             this.remainingEntries = new ArrayDeque<>(buildFormationEntries(source, names, formation));
+            this.totalCount = names.size();
+            this.bossBar = new ServerBossEvent(
+                    Component.literal("Summoning Bots..."),
+                    BossEvent.BossBarColor.BLUE,
+                    BossEvent.BossBarOverlay.PROGRESS
+            );
+            this.bossBar.setProgress(0.0F);
+        }
+
+        private SummonBatch(ServerState owner, MinecraftServer server, CommandSourceStack source, List<String> names, BotConfig config, List<SummonEntry> entries) {
+            this.owner = owner;
+            this.server = server;
+            this.feedbackSource = source;
+            this.executionSource = source.withSuppressedOutput();
+            this.config = config;
+            this.formation = config.formation();
+            this.batchNames = List.copyOf(names);
+            this.batchNameKeys = names.stream()
+                    .map(PlayerBatchService::normalizePlayerName)
+                    .filter(Objects::nonNull)
+                    .collect(LinkedHashSet::new, Set::add, Set::addAll);
+            this.plannedConfigs = buildPlannedConfigs(names, config);
+            this.remainingEntries = new ArrayDeque<>(entries);
             this.totalCount = names.size();
             this.bossBar = new ServerBossEvent(
                     Component.literal("Summoning Bots..."),
@@ -3442,6 +4247,7 @@ public final class PlayerBatchService {
             }
             return switch (normalizedFormation) {
                 case "filled circle" -> buildFilledCircleEntries(source, names);
+                case "dense" -> buildDenseEntries(source, names);
                 case "square" -> buildSquareEntries(source, names);
                 case "triangle" -> buildTriangleEntries(source, names);
                 case "random" -> buildRandomEntries(source, names);
@@ -3549,6 +4355,24 @@ public final class PlayerBatchService {
             return entries;
         }
 
+        private List<SummonEntry> buildDenseEntries(CommandSourceStack source, List<String> names) {
+            List<SummonEntry> entries = new ArrayList<>(names.size());
+            Vec3 center = source.getPosition();
+            ServerLevel level = source.getLevel();
+            int sideLength = Math.max(1, (int) Math.ceil(Math.sqrt(names.size())));
+            double spacing = 1.0D;
+            double originX = center.x - ((sideLength - 1) * spacing) / 2.0D;
+            double originZ = center.z - ((sideLength - 1) * spacing) / 2.0D;
+            for (int index = 0; index < names.size(); index++) {
+                int row = index / sideLength;
+                int column = index % sideLength;
+                double x = originX + (column * spacing);
+                double z = originZ + (row * spacing);
+                entries.add(buildEntry(level, center, names.get(index), x, z));
+            }
+            return entries;
+        }
+
         private List<SummonEntry> buildTriangleEntries(CommandSourceStack source, List<String> names) {
             List<SummonEntry> entries = new ArrayList<>(names.size());
             Vec3 center = source.getPosition();
@@ -3607,6 +4431,14 @@ public final class PlayerBatchService {
         }
 
         private record SummonEntry(String name, String command) {
+            private SummonEntry withName(String nextName) {
+                return new SummonEntry(nextName, command.replaceFirst("player\\s+\\S+\\s+spawn", "player " + nextName + " spawn"));
+            }
+
+            private static SummonEntry forBlock(String name, BlockPos pos) {
+                String command = String.format(Locale.ROOT, "player %s spawn at %.3f %.3f %.3f", name, pos.getX() + 0.5D, pos.getY() + 1.0D, pos.getZ() + 0.5D);
+                return new SummonEntry(name, command);
+            }
         }
     }
 
@@ -3717,7 +4549,7 @@ public final class PlayerBatchService {
         }
         String normalized = rawFormation.trim().toLowerCase(Locale.ROOT);
         String builtin = switch (normalized) {
-            case "circle", "filled circle", "square", "triangle", "random", "single block" -> normalized;
+            case "circle", "filled circle", "dense", "square", "triangle", "random", "single block" -> normalized;
             case "filled_circle", "filledcircle" -> "filled circle";
             case "single_block", "singleblock" -> "single block";
             default -> null;
@@ -3792,27 +4624,31 @@ public final class PlayerBatchService {
         }
 
         CombatPresetSpec combatPreset = null;
-            if (!optionTokens.isEmpty()) {
-                List<String> builtinOptionTokens = new ArrayList<>();
-                for (String token : optionTokens) {
-                    if (CombatPresetParser.isKnownOptionToken(token)) {
-                        builtinOptionTokens.add(token);
+        if (!optionTokens.isEmpty()) {
+            List<String> builtinOptionTokens = new ArrayList<>();
+            for (String token : optionTokens) {
+                if (CombatPresetParser.isKnownOptionToken(token)) {
+                    builtinOptionTokens.add(token);
+                    continue;
+                }
+                if (isBlocksToken(token)) {
+                    loadout = loadout.mergedWith(parseBlocksToken(token));
                     continue;
                 }
                 boolean handled = PlayerBatchExtensionManager.applyArgumentToken(token, extensionPlan);
                 if (!handled) {
                     throw new IllegalArgumentException("Unknown summon argument: " + token);
                 }
-                }
-                if (!builtinOptionTokens.isEmpty()) {
-                    String rawOptions = String.join(" ", builtinOptionTokens);
-                    CombatPresetParser.validate(rawOptions);
-                    if (CombatPresetParser.shouldCreatePreset(rawOptions)) {
-                        combatPreset = CombatPresetParser.parse(rawOptions);
-                        loadout = loadout.mergedWith(combatPreset.createLoadout());
-                    }
+            }
+            if (!builtinOptionTokens.isEmpty()) {
+                String rawOptions = String.join(" ", builtinOptionTokens);
+                CombatPresetParser.validate(rawOptions);
+                if (CombatPresetParser.shouldCreatePreset(rawOptions)) {
+                    combatPreset = CombatPresetParser.parse(rawOptions);
+                    loadout = loadout.mergedWith(combatPreset.createLoadout());
                 }
             }
+        }
 
         if (!extensionPlan.formationId().isBlank()) {
             formation = extensionPlan.formationId();
@@ -3854,6 +4690,11 @@ public final class PlayerBatchService {
         return token.startsWith("kit{") || token.startsWith("-kit{");
     }
 
+    private static boolean isBlocksToken(String token) {
+        String normalized = token == null ? "" : token.trim().toLowerCase(Locale.ROOT);
+        return normalized.startsWith("blocks{") || normalized.startsWith("-blocks{");
+    }
+
     private static String extractKitName(String token) {
         int start = token.indexOf('{');
         int end = token.lastIndexOf('}');
@@ -3865,6 +4706,55 @@ public final class PlayerBatchService {
             throw new IllegalArgumentException("Kit name cannot be empty.");
         }
         return name;
+    }
+
+    private static BotLoadout parseBlocksToken(String token) {
+        int start = token.indexOf('{');
+        int end = token.lastIndexOf('}');
+        if (start < 0 || end <= start) {
+            throw new IllegalArgumentException("Expected -blocks{item*count,...} in summon setup.");
+        }
+        String inside = token.substring(start + 1, end).trim();
+        if (inside.isBlank()) {
+            throw new IllegalArgumentException("blocks argument cannot be empty.");
+        }
+
+        BotLoadout loadout = new BotLoadout();
+        int nextSlot = 9;
+        for (String rawPiece : inside.split(",")) {
+            String piece = rawPiece.trim();
+            if (piece.isEmpty()) {
+                continue;
+            }
+            String itemId = piece;
+            int count = 1;
+            if (piece.contains("*")) {
+                String[] split = piece.split("\\*", 2);
+                itemId = split[0].trim();
+                try {
+                    count = Integer.parseInt(split[1].trim());
+                } catch (NumberFormatException exception) {
+                    throw new IllegalArgumentException("Invalid block count in " + piece + ".");
+                }
+            }
+            Item item = parseItem(itemId);
+            if (!(item instanceof BlockItem blockItem)) {
+                throw new IllegalArgumentException("Not a placeable block item: " + itemId);
+            }
+            BlockState blockState = blockItem.getBlock().defaultBlockState();
+            if (blockState.isAir() || !blockState.blocksMotion()) {
+                throw new IllegalArgumentException("Block must be solid and placeable: " + itemId);
+            }
+            if (nextSlot >= 36) {
+                break;
+            }
+            loadout.inventory().put(nextSlot, new BotLoadout.StackSpec(normalizeRegistryId(itemId), Math.max(1, count)));
+            nextSlot++;
+        }
+        if (loadout.isEmpty()) {
+            throw new IllegalArgumentException("blocks argument did not contain any valid block stacks.");
+        }
+        return loadout;
     }
 
     private static String makeUniqueSummonName(String requestedName, Collection<String> reservedLowercaseNames) {
@@ -4018,6 +4908,9 @@ public final class PlayerBatchService {
         }
     }
 
+    private record TestRunResult(boolean success, String message) {
+    }
+
     private static final class BotGroup {
         private final String displayName;
         private final Set<UUID> memberIds = new LinkedHashSet<>();
@@ -4040,10 +4933,22 @@ public final class PlayerBatchService {
         }
     }
 
+    private enum CombatPhase {
+        ENGAGE,
+        PRESSURE,
+        RETREAT,
+        RECOVER
+    }
+
     private static final class BotBrain {
         private EnumSet<BotAiMode> modes = EnumSet.of(BotAiMode.IDLE);
         private String groupKey;
         private CombatPresetSpec combatPreset;
+        private CombatPhase combatPhase = CombatPhase.ENGAGE;
+        private UUID assignedTargetId;
+        private int assignedTargetRefreshTicks;
+        private int critWindowTicks;
+        private int stuckChatCooldownTicks;
         private int healCooldownTicks;
         private int attackRetreatTicks;
         private int flexSpinTicks;
@@ -4057,6 +4962,8 @@ public final class PlayerBatchService {
         private int stuckTicks;
         private int unstuckStrafeTicks;
         private float unstuckStrafeDirection = 1.0F;
+        private int bypassCommitTicks;
+        private Direction bypassDirection;
         private int terrainActionCooldownTicks;
         private BlockPos breakingBlockPos;
         private int breakingTicks;
