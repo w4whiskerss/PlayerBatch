@@ -46,50 +46,73 @@ Install steps:
 
 ## Main Commands
 
-### Summoning
+### Spawning
 
 ```mcfunction
-/playersummon <count>
-/pb summon <count> <names> <formation> <arguments>
-/pb preset combat <count> <arguments>
+/pb spawn <count>
+/pb spawn <count> {name1,name2,...} <formation> <arguments>
+/pb presets combat <count> <arguments>
 ```
 
 ### Selection
 
 ```mcfunction
 /pb wand
-/pb select all
-/pb select range <distance>
-/pb select count <number>
-/pb clearselection
-/pb listselection
+/pb selection all
+/pb selection range <distance>
+/pb selection count <number>
+/pb selection clear
+/pb selection list
 ```
 
 ### Bot Control
 
 ```mcfunction
-/pb command <action>
-/pb look at <player>
-/pb tp type=wand:selected <direction> <block>
-/pb fixtags
+/pb run <action>
+/pb target look <player>
+/pb teleport selected <direction> <block>
+/pb repair tags
 ```
 
 ### Kits
 
 ```mcfunction
-/pb kit save <name>
-/pb kit load <name>
-/pb kit self <name>
-/pb kit list
+/pb kits save <name>
+/pb kits load <name>
+/pb kits self <name>
+/pb kits list
+```
+
+### Presets
+
+```mcfunction
+/pb presets combat <count> [options]
+/pb presets save <name> combat <count> <options>
+/pb presets use <name> [count]
+/pb presets list
+```
+
+### Utility / Testing
+
+```mcfunction
+/pb test all
+/pb test goto coords <x> <y> <z>
+/pb test goto entity <target>
+/pb test stop
+/pb config limit <number>
+/pb config spawns_per_tick <number>
+/pb config debug on
+/pb config debug off
 ```
 
 ## Example Commands
 
 ```mcfunction
-/pb summon 50 {W4Whiskers,PixelCrafter} circle -diamondarmor -diamondtools -reach{6} -damage{true}
-/pb summon 100 {} filled_circle -ironarmor -irontools
-/pb look at W4Whiskers
-/pb fixtags
+/pb spawn 50 {W4Whiskers,PixelCrafter} circle -diamondarmor -diamondtools -reach{6} -damage{true}
+/pb spawn 100 {} dense -ironarmor -irontools -blocks{cobblestone*64}
+/pb target look W4Whiskers
+/pb repair tags
+/pb test all
 ```
 
 ## Formations
@@ -98,6 +121,7 @@ Built-in formations currently include:
 
 - `circle`
 - `filled_circle`
+- `dense`
 - `square`
 - `triangle`
 - `random`
