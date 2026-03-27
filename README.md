@@ -2,7 +2,7 @@
 
 > Bulk-summon, control, and script fake players on Fabric with Carpet.
 
-[![Download on GitHub](https://img.shields.io/badge/Download-GitHub%20Release-2ea44f?style=for-the-badge&logo=github)](https://github.com/w4whiskerss/PlayerBatch/releases/tag/latest-1.21.11)
+[![Download Jar](https://img.shields.io/badge/Download-Latest%20Jar-2ea44f?style=for-the-badge&logo=modrinth)](https://cdn.modrinth.com/data/yH2yuBFx/versions/N2AhW7uC/PlayerBatch-2.0.1-mc1.21.11.jar)
 [![Modrinth](https://img.shields.io/badge/Download-Modrinth-1bd96a?style=for-the-badge&logo=modrinth)](https://modrinth.com/mod/playerbatch)
 [![ExtAPI](https://img.shields.io/badge/API-PlayerBatch--ExtAPI-5865f2?style=for-the-badge)](https://github.com/w4whiskerss/PlayerBatch-ExtAPI)
 [![Issues](https://img.shields.io/badge/Support-Issues-db61a2?style=for-the-badge&logo=github)](https://github.com/w4whiskerss/PlayerBatch/issues)
@@ -11,7 +11,7 @@
 
 ## Quick Links
 
-- Download latest jar: [GitHub release](https://github.com/w4whiskerss/PlayerBatch/releases/tag/latest-1.21.11)
+- Download latest jar: [PlayerBatch-2.0.1-mc1.21.11.jar](https://cdn.modrinth.com/data/yH2yuBFx/versions/N2AhW7uC/PlayerBatch-2.0.1-mc1.21.11.jar)
 - Modrinth page: [PlayerBatch on Modrinth](https://modrinth.com/mod/playerbatch)
 - Extension API: [PlayerBatch-ExtAPI](https://github.com/w4whiskerss/PlayerBatch-ExtAPI)
 - Source code: [GitHub repository](https://github.com/w4whiskerss/PlayerBatch)
@@ -146,8 +146,7 @@ Want to build add-ons for PlayerBatch?
 
 - `PlayerBatch` is command-first
 - It reuses Carpet fake-player spawning instead of reimplementing fake players
-- The latest `1.21.11` jar is uploaded to GitHub releases whenever a new build is published
-- If the Modrinth page is not live yet, use the GitHub release link above
+- The latest `1.21.11` jar can be downloaded directly from the Modrinth CDN link above
 
 ## Support
 
