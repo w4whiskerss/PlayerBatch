@@ -80,6 +80,8 @@ public final class PlayerBatchService {
     private static final int FLEX_SPIN_STEPS = 8;
     private static final int COMBAT_ASSIGNMENT_REFRESH_TICKS = 20;
     private static final int STUCK_CHAT_COOLDOWN_TICKS = 120;
+    private static final double SHIELD_RETREAT_DISTANCE = 7.0D;
+    private static final double HEAL_RETREAT_DISTANCE = 24.0D;
     private static final String DEFAULT_FORMATION = "circle";
     private static final ConcurrentMap<MinecraftServer, ServerState> SERVER_STATES = new ConcurrentHashMap<>();
     private static final MobEffectInstance SELECTED_GLOWING = new MobEffectInstance(MobEffects.GLOWING, Integer.MAX_VALUE, 0, false, false);
@@ -317,6 +319,26 @@ public final class PlayerBatchService {
         }
         source.sendSuccess(() -> Component.literal("Made " + affected + " selected bot" + suffix(affected) + " look at " + target.getGameProfile().name() + "."), true);
         return affected;
+    }
+
+    public static int setSelectedCombatTargets(CommandSourceStack source, Collection<? extends Entity> targets) {
+        AiResult result = state(source.getServer()).setSelectedCombatTargets(targets);
+        if (!result.success()) {
+            source.sendFailure(Component.literal(result.message()));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(result.message()), true);
+        return result.affected();
+    }
+
+    public static int clearSelectedCombatTargets(CommandSourceStack source) {
+        AiResult result = state(source.getServer()).clearSelectedCombatTargets();
+        if (!result.success()) {
+            source.sendFailure(Component.literal(result.message()));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal(result.message()), true);
+        return result.affected();
     }
 
     public static int fixBotTags(CommandSourceStack source) {
@@ -1790,6 +1812,60 @@ public final class PlayerBatchService {
             );
         }
 
+        private AiResult setSelectedCombatTargets(Collection<? extends Entity> targets) {
+            List<EntityPlayerMPFake> players = selectedPlayers();
+            if (players.isEmpty()) {
+                return AiResult.failure("Select one or more managed bots first.");
+            }
+
+            List<LivingEntity> livingTargets = targets == null ? List.of() : targets.stream()
+                    .filter(LivingEntity.class::isInstance)
+                    .map(LivingEntity.class::cast)
+                    .filter(Entity::isAlive)
+                    .filter(entity -> !(entity instanceof EntityPlayerMPFake managed && managed.getTags().contains(BOT_TAG)))
+                    .distinct()
+                    .toList();
+            if (livingTargets.isEmpty()) {
+                return AiResult.failure("Choose one or more living non-bot targets.");
+            }
+
+            List<UUID> targetIds = livingTargets.stream().map(Entity::getUUID).toList();
+            for (EntityPlayerMPFake player : players) {
+                BotBrain brain = ensureBrain(player);
+                brain.explicitTargetIds = new ArrayList<>(targetIds);
+                brain.assignedTargetId = null;
+                brain.assignedTargetRefreshTicks = 0;
+            }
+            broadcast(false);
+            return AiResult.success(
+                    "Set combat targets for " + players.size() + " selected bot" + suffix(players.size()) + ": "
+                            + livingTargets.stream().map(this::describeTarget).toList(),
+                    players.size()
+            );
+        }
+
+        private AiResult clearSelectedCombatTargets() {
+            List<EntityPlayerMPFake> players = selectedPlayers();
+            if (players.isEmpty()) {
+                return AiResult.failure("Select one or more managed bots first.");
+            }
+            int cleared = 0;
+            for (EntityPlayerMPFake player : players) {
+                BotBrain brain = ensureBrain(player);
+                if (!brain.explicitTargetIds.isEmpty()) {
+                    brain.explicitTargetIds.clear();
+                    brain.assignedTargetId = null;
+                    brain.assignedTargetRefreshTicks = 0;
+                    cleared++;
+                }
+            }
+            if (cleared <= 0) {
+                return AiResult.failure("Selected bots do not have explicit combat targets set.");
+            }
+            broadcast(false);
+            return AiResult.success("Cleared explicit combat targets for " + cleared + " selected bot" + suffix(cleared) + ".", cleared);
+        }
+
         private void applyCombatPreset(EntityPlayerMPFake fakePlayer, CombatPresetSpec combatPreset) {
             BotBrain brain = ensureBrain(fakePlayer);
             brain.combatPreset = combatPreset;
@@ -2294,11 +2370,38 @@ public final class PlayerBatchService {
         }
 
         private LivingEntity resolveCombatThreat(EntityPlayerMPFake source, BotBrain brain, double range) {
+            LivingEntity explicitTarget = resolveExplicitCombatTarget(source, brain);
+            if (explicitTarget != null) {
+                return explicitTarget;
+            }
             ServerPlayer assignedPlayer = resolveAssignedCombatPlayer(source, brain, range);
             if (assignedPlayer != null) {
                 return assignedPlayer;
             }
-            return findNearestThreat(source, range > 0.0D ? range : 24.0D);
+            return findNearestThreat(source, range);
+        }
+
+        private LivingEntity resolveExplicitCombatTarget(EntityPlayerMPFake source, BotBrain brain) {
+            if (brain.explicitTargetIds.isEmpty()) {
+                return null;
+            }
+            ServerLevel level = (ServerLevel) source.level();
+            List<LivingEntity> candidates = new ArrayList<>();
+            for (UUID targetId : List.copyOf(brain.explicitTargetIds)) {
+                Entity entity = level.getEntity(targetId);
+                if (entity instanceof LivingEntity living
+                        && living.isAlive()
+                        && !living.getUUID().equals(source.getUUID())
+                        && !(living instanceof EntityPlayerMPFake managed && managed.getTags().contains(BOT_TAG))) {
+                    candidates.add(living);
+                }
+            }
+            if (candidates.isEmpty()) {
+                brain.assignedTargetId = null;
+                brain.assignedTargetRefreshTicks = 0;
+                return null;
+            }
+            return assignDistributedThreat(source, brain, candidates);
         }
 
         private ServerPlayer resolveAssignedCombatPlayer(EntityPlayerMPFake source, BotBrain brain, double range) {
@@ -2362,8 +2465,57 @@ public final class PlayerBatchService {
                     && (range <= 0.0D || player.distanceToSqr(source) <= range * range);
         }
 
+        private LivingEntity assignDistributedThreat(EntityPlayerMPFake source, BotBrain brain, List<? extends LivingEntity> candidates) {
+            ServerLevel level = (ServerLevel) source.level();
+            if (brain.assignedTargetId != null && brain.assignedTargetRefreshTicks > 0) {
+                Entity existing = level.getEntity(brain.assignedTargetId);
+                if (existing instanceof LivingEntity living && living.isAlive() && candidates.stream().anyMatch(candidate -> candidate.getUUID().equals(living.getUUID()))) {
+                    return living;
+                }
+            }
+
+            List<EntityPlayerMPFake> combatBots = fakePlayers().stream()
+                    .filter(bot -> bot.level() == source.level())
+                    .filter(bot -> {
+                        BotBrain otherBrain = ensureBrain(bot);
+                        return otherBrain.combatPreset != null || otherBrain.modes.contains(BotAiMode.COMBAT);
+                    })
+                    .sorted(Comparator.comparing(bot -> bot.getUUID().toString()))
+                    .toList();
+            int botIndex = Math.max(0, combatBots.indexOf(source));
+            LivingEntity assigned;
+            if (candidates.size() == 1) {
+                assigned = candidates.getFirst();
+            } else if (candidates.size() == 2) {
+                assigned = candidates.get(botIndex % 2);
+            } else if (candidates.stream().allMatch(ServerPlayer.class::isInstance)) {
+                List<ServerPlayer> rankedByGear = candidates.stream()
+                        .map(ServerPlayer.class::cast)
+                        .sorted(Comparator.comparingInt(this::scoreRealPlayerGear).reversed())
+                        .toList();
+                ServerPlayer priority = rankedByGear.getFirst();
+                List<ServerPlayer> secondaryTargets = rankedByGear.subList(1, rankedByGear.size());
+                int prioritySlots = Math.max(1, (int) Math.ceil(Math.max(1, combatBots.size()) * 0.75D));
+                if (botIndex < prioritySlots) {
+                    assigned = priority;
+                } else {
+                    int secondaryIndex = (botIndex - prioritySlots) % secondaryTargets.size();
+                    assigned = secondaryTargets.get(secondaryIndex);
+                }
+            } else {
+                List<LivingEntity> sortedCandidates = new ArrayList<>(candidates);
+                sortedCandidates.sort(Comparator.comparing(entity -> entity.getUUID().toString()));
+                assigned = sortedCandidates.get(botIndex % sortedCandidates.size());
+            }
+
+            brain.assignedTargetId = assigned.getUUID();
+            brain.assignedTargetRefreshTicks = COMBAT_ASSIGNMENT_REFRESH_TICKS;
+            return assigned;
+        }
+
         private LivingEntity findNearestThreat(EntityPlayerMPFake source, double range) {
-            return source.level().getEntitiesOfClass(LivingEntity.class, source.getBoundingBox().inflate(range), entity ->
+            double searchRange = range > 0.0D ? range : 256.0D;
+            return source.level().getEntitiesOfClass(LivingEntity.class, source.getBoundingBox().inflate(searchRange), entity ->
                             !entity.getUUID().equals(source.getUUID()) && !(entity instanceof EntityPlayerMPFake managed && managed.getTags().contains(BOT_TAG)))
                     .stream()
                     .min(Comparator.comparingDouble(entity -> entity.distanceToSqr(source)))
@@ -2394,6 +2546,17 @@ public final class PlayerBatchService {
 
         private void lookAtPosition(EntityPlayerMPFake source, Vec3 targetPos) {
             source.lookAt(net.minecraft.commands.arguments.EntityAnchorArgument.Anchor.EYES, targetPos);
+            syncVisibleRotation(source);
+        }
+
+        private void lookAlongVector(EntityPlayerMPFake source, Vec3 direction, float pitch) {
+            Vec3 horizontal = new Vec3(direction.x, 0.0D, direction.z);
+            if (horizontal.lengthSqr() < 0.0001D) {
+                return;
+            }
+            float yaw = (float) (net.minecraft.util.Mth.atan2(-horizontal.x, horizontal.z) * (180.0F / Math.PI));
+            source.setYRot(yaw);
+            source.setXRot(pitch);
             syncVisibleRotation(source);
         }
 
@@ -2487,18 +2650,24 @@ public final class PlayerBatchService {
                 return;
             }
 
-            if (threatDistance < 5.0D) {
+            if (threatDistance < SHIELD_RETREAT_DISTANCE) {
                 tracePathing(source, brain, threat, "combat-retreat", "shield-backout");
+                lookAtTarget(source, threat);
                 if (source.getOffhandItem().is(Items.SHIELD)) {
                     actionPack(source).start(EntityPlayerActionPack.ActionType.USE, EntityPlayerActionPack.Action.continuous());
                 }
-                moveAwayFromThreat(source, threat, 0.85F, brain);
+                moveAwayFromThreat(source, threat, 0.9F, brain);
                 return;
             }
 
             actionPack(source).start(EntityPlayerActionPack.ActionType.USE, null);
+            if (threatDistance < HEAL_RETREAT_DISTANCE) {
+                tracePathing(source, brain, threat, "combat-retreat", "turn-run");
+                runAwayFromThreat(source, threat, combatPreset != null && combatPreset.stapEnabled() ? 1.05F : 1.0F, brain);
+                return;
+            }
             tracePathing(source, brain, threat, "combat-retreat", "reset-distance");
-            moveAwayFromThreat(source, threat, combatPreset != null && combatPreset.stapEnabled() ? 1.0F : 0.75F, brain);
+            stopActionMovement(source, false);
         }
 
         private boolean shouldStartHealingNow(EntityPlayerMPFake fakePlayer, LivingEntity threat, HealingChoice healingChoice) {
@@ -2510,8 +2679,8 @@ public final class PlayerBatchService {
             }
             double distance = horizontalDistance(fakePlayer, threat);
             return switch (healingChoice.kind()) {
-                case POTION -> distance >= 4.0D;
-                case FOOD -> distance >= 8.0D;
+                case POTION -> distance >= 18.0D;
+                case FOOD -> distance >= 22.0D;
             };
         }
 
@@ -3002,6 +3171,24 @@ public final class PlayerBatchService {
             updateStuckState(source, brain, true, threat);
         }
 
+        private void runAwayFromThreat(EntityPlayerMPFake source, Entity threat, float forwardPower, BotBrain brain) {
+            Vec3 away = source.position().subtract(threat.position());
+            if (away.lengthSqr() < 0.0001D) {
+                stopActionMovement(source, false);
+                return;
+            }
+            EntityPlayerActionPack actionPack = actionPack(source);
+            lookAlongVector(source, away, 0.0F);
+            actionPack.setSneaking(false);
+            actionPack.setSprinting(true);
+            actionPack.setStrafing(brain.unstuckStrafeTicks > 0 ? brain.unstuckStrafeDirection * 0.35F : 0.0F);
+            actionPack.setForward(Math.max(0.65F, Math.min(1.0F, forwardPower)));
+            if (shouldJumpTowardTarget(source, threat, away.normalize().scale(0.9D), brain)) {
+                actionPack.start(EntityPlayerActionPack.ActionType.JUMP, EntityPlayerActionPack.Action.once());
+            }
+            updateStuckState(source, brain, true, threat);
+        }
+
         private void tick360Flex(EntityPlayerMPFake source, LivingEntity target, BotBrain brain) {
             EntityPlayerActionPack actionPack = actionPack(source);
             actionPack.setSneaking(false);
@@ -3338,7 +3525,7 @@ public final class PlayerBatchService {
                 case THROW_POTION -> {
                     if (state.phaseTicks > 4) {
                         if (threat != null) {
-                            moveAwayFromThreat(fakePlayer, threat, 1.15F, brain);
+                            runAwayFromThreat(fakePlayer, threat, 1.0F, brain);
                         } else {
                             actionPack.setForward(-0.85F);
                             actionPack.setStrafing(0.0F);
@@ -3364,7 +3551,7 @@ public final class PlayerBatchService {
                 case EAT, DRINK -> {
                     if (state.phaseTicks > 0) {
                         if (threat != null) {
-                            moveAwayFromThreat(fakePlayer, threat, 1.0F, brain);
+                            runAwayFromThreat(fakePlayer, threat, 1.0F, brain);
                         } else {
                             actionPack.setForward(-0.7F);
                             actionPack.setStrafing(0.0F);
@@ -3387,6 +3574,7 @@ public final class PlayerBatchService {
                     } else {
                         actionPack.look(fakePlayer.getYRot(), 2.0F);
                     }
+                    syncVisibleRotation(fakePlayer);
                     if (hasConsumedHealingItem(fakePlayer, state) || (!fakePlayer.isUsingItem() && state.timeoutTicks < 70)) {
                         finishScriptedUse(fakePlayer, brain, true);
                     }
@@ -4946,6 +5134,7 @@ public final class PlayerBatchService {
         private CombatPresetSpec combatPreset;
         private CombatPhase combatPhase = CombatPhase.ENGAGE;
         private UUID assignedTargetId;
+        private List<UUID> explicitTargetIds = new ArrayList<>();
         private int assignedTargetRefreshTicks;
         private int critWindowTicks;
         private int stuckChatCooldownTicks;

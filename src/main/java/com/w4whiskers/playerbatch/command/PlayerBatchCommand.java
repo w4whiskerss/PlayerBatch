@@ -312,7 +312,15 @@ public final class PlayerBatchCommand {
                                         .executes(context -> PlayerBatchService.lookSelectionAt(
                                                 context.getSource(),
                                                 EntityArgument.getPlayer(context, "player")
-                                        )))))
+                                        ))))
+                        .then(Commands.literal("kill")
+                                .then(Commands.argument("targets", EntityArgument.entities())
+                                        .executes(context -> PlayerBatchService.setSelectedCombatTargets(
+                                                context.getSource(),
+                                                EntityArgument.getEntities(context, "targets")
+                                        ))))
+                        .then(Commands.literal("clear")
+                                .executes(context -> PlayerBatchService.clearSelectedCombatTargets(context.getSource()))))
                 .then(Commands.literal("repair")
                         .then(Commands.literal("tags")
                                 .executes(context -> PlayerBatchService.fixBotTags(context.getSource()))))
@@ -414,6 +422,7 @@ public final class PlayerBatchCommand {
                             context.getSource().sendSuccess(() -> Component.literal("/pb run <action>  | run an action on selected bots"), false);
                             context.getSource().sendSuccess(() -> Component.literal("/pb gear item/effect/clear_effects  | edit selected bot gear/effects"), false);
                             context.getSource().sendSuccess(() -> Component.literal("/pb target look <player>  | make selected bots face a player"), false);
+                            context.getSource().sendSuccess(() -> Component.literal("/pb target kill <targets>  | set who selected bots should hunt in combat"), false);
                             context.getSource().sendSuccess(() -> Component.literal("/pb teleport selected <direction> <block>  | move selected bots near blocks"), false);
                             context.getSource().sendSuccess(() -> Component.literal("/pb presets use <name> [count]  | use a saved combat preset"), false);
                             context.getSource().sendSuccess(() -> Component.literal("/pb kits load <name>  | load a saved kit onto selected bots"), false);
